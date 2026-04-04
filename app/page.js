@@ -52,27 +52,24 @@ export default function FireApp() {
   const cargarPensamientos = async () => {
     setIsLoading(true);
     try {
-      const { data } = await supabase
+      // Traer TODOS los pensamientos (sin filtro de ubicación por ahora)
+      const { data, error } = await supabase
         .from('pensamientos')
         .select('*')
-        .gte('expires_at', new Date().toISOString())
         .order('created_at', { ascending: false });
 
-      const { data: misReacciones } = await supabase
-        .from('reacciones')
-        .select('pensamiento_id')
-        .eq('device_id', deviceId);
+      console.log('Datos:', data, 'Error:', error);
 
-      const reaccionesSet = new Set(misReacciones?.map(r => r.pensamiento_id) || []);
-
-      setThoughts((data || []).map(p => ({
-        id: p.id,
-        text: p.texto,
-        fires: p.fires || 0,
-        timeAgo: formatearTiempo(p.created_at),
-        hoursOld: (new Date() - new Date(p.created_at)) / 3600000,
-        hasFired: reaccionesSet.has(p.id)
-      })));
+      if (data) {
+        setThoughts(data.map(p => ({
+          id: p.id,
+          text: p.texto,
+          fires: p.fires || 0,
+          timeAgo: formatearTiempo(p.created_at),
+          hoursOld: (new Date() - new Date(p.created_at)) / 3600000,
+          hasFired: false
+        })));
+      }
     } catch (e) {
       console.error('Error cargando:', e);
     }
