@@ -7,80 +7,48 @@ const supabase = createClient(
   'sb_publishable_yQKCNJT5hrCvWQIAsk1Yig_9GKZHgaY'
 );
 
-const getDeviceId = () => {
-  if (typeof window === 'undefined') return 'server';
-  let deviceId = localStorage.getItem('fire_device_id');
-  if (!deviceId) {
-    deviceId = 'device_' + Math.random().toString(36).substr(2, 9) + Date.now();
-    localStorage.setItem('fire_device_id', deviceId);
-  }
-  return deviceId;
-};
-
 export default function FireApp() {
   const [screen, setScreen] = useState('feed');
   const [thoughts, setThoughts] = useState([]);
   const [newThought, setNewThought] = useState('');
   const [thoughtsLeft, setThoughtsLeft] = useState(3);
-  const [videosLeft, setVideosLeft] = useState(3);
   const [isReleasing, setIsReleasing] = useState(false);
-  const [showPurchase, setShowPurchase] = useState(false);
-  const [isWatchingVideo, setIsWatchingVideo] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [location, setLocation] = useState(null);
   const [deviceId, setDeviceId] = useState('');
 
   useEffect(() => {
-    setDeviceId(getDeviceId());
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => setLocation({ lat: position.coords.latitude, lng: position.coords.longitude }),
-        () => setLocation({ lat: 19.4326, lng: -99.1332 }),
-        { enableHighAccuracy: true, timeout: 10000 }
-      );
-    } else {
-      setLocation({ lat: 19.4326, lng: -99.1332 });
+    let id = localStorage.getItem('fire_device_id');
+    if (!id) {
+      id = 'device_' + Math.random().toString(36).substr(2, 9);
+      localStorage.setItem('fire_device_id', id);
     }
+    setDeviceId(id);
+    cargarPensamientos();
   }, []);
-
-  useEffect(() => {
-    if (location && deviceId) {
-      cargarPensamientos();
-    }
-  }, [location, deviceId]);
 
   const cargarPensamientos = async () => {
     setIsLoading(true);
-    try {
-      // Traer TODOS los pensamientos (sin filtro de ubicación por ahora)
-      const { data, error } = await supabase
-        .from('pensamientos')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      console.log('Datos:', data, 'Error:', error);
-
-      if (data) {
-        setThoughts(data.map(p => ({
-          id: p.id,
-          text: p.texto,
-          fires: p.fires || 0,
-          timeAgo: formatearTiempo(p.created_at),
-          hoursOld: (new Date() - new Date(p.created_at)) / 3600000,
-          hasFired: false
-        })));
-      }
-    } catch (e) {
-      console.error('Error cargando:', e);
+    const { data } = await supabase
+      .from('pensamientos')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (data) {
+      setThoughts(data.map(p => ({
+        id: p.id,
+        text: p.texto,
+        fires: p.fires || 0,
+        timeAgo: getTimeAgo(p.created_at)
+      })));
     }
     setIsLoading(false);
   };
 
-  const formatearTiempo = (fecha) => {
-    const diff = (new Date() - new Date(fecha)) / 60000;
-    if (diff < 1) return 'ahora';
-    if (diff < 60) return Math.floor(diff) + 'm';
-    return Math.floor(diff / 60) + 'h';
+  const getTimeAgo = (date) => {
+    const mins = Math.floor((new Date() - new Date(date)) / 60000);
+    if (mins < 1) return 'ahora';
+    if (mins < 60) return mins + 'm';
+    return Math.floor(mins / 60) + 'h';
   };
 
   const handleTextChange = (e) => {
@@ -88,147 +56,133 @@ export default function FireApp() {
     if (filtered.length <= 200) setNewThought(filtered);
   };
 
-  const getBurnLevel = (h) => h < 6 ? 0 : h < 12 ? 1 : h < 18 ? 2 : h < 22 ? 3 : 4;
-
-  const handleFire = async (id, e) => {
-    e.stopPropagation();
+  const handleFire = async (id) => {
     const thought = thoughts.find(t => t.id === id);
-    if (!thought) return;
-
-    if (thought.hasFired) {
-      await supabase.from('reacciones').delete().eq('pensamiento_id', id).eq('device_id', deviceId);
-      await supabase.from('pensamientos').update({ fires: thought.fires - 1 }).eq('id', id);
-      setThoughts(thoughts.map(t => t.id === id ? { ...t, fires: t.fires - 1, hasFired: false } : t));
-    } else {
-      await supabase.from('reacciones').insert({ pensamiento_id: id, device_id: deviceId });
-      await supabase.from('pensamientos').update({ fires: thought.fires + 1 }).eq('id', id);
-      setThoughts(thoughts.map(t => t.id === id ? { ...t, fires: t.fires + 1, hasFired: true } : t));
-    }
-  };
-
-  const watchVideo = () => {
-    if (videosLeft <= 0) return;
-    setIsWatchingVideo(true);
-    setTimeout(() => {
-      setVideosLeft(prev => prev - 1);
-      setThoughtsLeft(prev => prev + 1);
-      setIsWatchingVideo(false);
-      setShowPurchase(false);
-    }, 3000);
+    await supabase.from('pensamientos').update({ fires: thought.fires + 1 }).eq('id', id);
+    setThoughts(thoughts.map(t => t.id === id ? { ...t, fires: t.fires + 1 } : t));
   };
 
   const releaseThought = async () => {
-    if (!newThought.trim() || !location) return;
-    if (thoughtsLeft <= 0) { setShowPurchase(true); return; }
-    
+    if (!newThought.trim() || thoughtsLeft <= 0) return;
     setIsReleasing(true);
-    
-    const { error } = await supabase.from('pensamientos').insert({
+
+    await supabase.from('pensamientos').insert({
       texto: newThought.trim(),
-      latitud: location.lat,
-      longitud: location.lng,
+      latitud: 19.4326,
+      longitud: -99.1332,
       device_id: deviceId,
-      fires: 0,
-      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      fires: 0
     });
 
-    if (!error) {
-      setThoughtsLeft(prev => prev - 1);
-      setNewThought('');
-      await cargarPensamientos();
-    } else {
-      console.error('Error:', error);
-    }
-
+    setThoughtsLeft(prev => prev - 1);
+    setNewThought('');
+    await cargarPensamientos();
+    
     setTimeout(() => {
       setIsReleasing(false);
       setScreen('feed');
-    }, 2000);
+    }, 1500);
   };
 
-  if (isLoading && !thoughts.length && !location) {
+  if (isLoading && thoughts.length === 0) {
     return (
       <div style={{ fontFamily: 'system-ui', maxWidth: '430px', margin: '0 auto', minHeight: '100vh', background: '#000', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
         <span style={{ fontSize: '48px' }}>🔥</span>
-        <p style={{ color: '#FF6B35', fontSize: '24px', fontWeight: '900', marginTop: '10px' }}>FIRE</p>
-        <p style={{ color: 'rgba(255,255,255,0.5)', marginTop: '20px' }}>Buscando cerca de ti...</p>
+        <p style={{ color: '#FF6B35', fontSize: '24px', fontWeight: '900' }}>FIRE</p>
+        <p style={{ color: 'rgba(255,255,255,0.5)', marginTop: '20px' }}>Cargando...</p>
       </div>
     );
   }
 
   return (
     <div style={{ fontFamily: 'system-ui', maxWidth: '430px', margin: '0 auto', minHeight: '100vh', background: '#000' }}>
-      {isWatchingVideo && (
-        <div style={{ position: 'fixed', inset: 0, background: '#000', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-          <p style={{ fontSize: '48px' }}>📺</p>
-          <p style={{ color: '#FF6B35', marginTop: '20px', fontWeight: '600' }}>Viendo video...</p>
-        </div>
-      )}
       
       {isReleasing && (
         <div style={{ position: 'fixed', inset: 0, background: '#000', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-          <div style={{ background: 'linear-gradient(145deg, #F5E6D3, #DCC9AB)', borderRadius: '6px', padding: '24px', maxWidth: '280px' }}>
-            <p style={{ fontSize: '16px', color: '#2D2A26', fontFamily: 'Georgia, serif', fontStyle: 'italic', margin: 0 }}>{newThought}</p>
+          <div style={{ background: '#F5E6D3', borderRadius: '8px', padding: '24px', maxWidth: '280px' }}>
+            <p style={{ color: '#2D2A26', fontFamily: 'Georgia', fontStyle: 'italic', margin: 0 }}>{newThought}</p>
           </div>
           <p style={{ marginTop: '30px', color: 'rgba(255,255,255,0.6)' }}>🔥 soltando...</p>
         </div>
       )}
 
       {screen === 'feed' ? (
-        <div style={{ minHeight: '100vh', background: '#000' }}>
-          <div style={{ position: 'sticky', top: 0, background: 'linear-gradient(180deg, #000 0%, #000 80%, transparent 100%)', padding: '50px 20px 30px', zIndex: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <>
+          <div style={{ padding: '50px 20px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontSize: '36px', filter: 'drop-shadow(0 0 10px rgba(255,107,53,0.8))' }}>🔥</span>
-              <span style={{ fontSize: '32px', fontWeight: '900', background: 'linear-gradient(135deg, #FF6B35 0%, #FF4500 50%, #FFD700 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>FIRE</span>
+              <span style={{ fontSize: '36px' }}>🔥</span>
+              <span style={{ fontSize: '28px', fontWeight: '900', color: '#FF6B35' }}>FIRE</span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 16px', background: 'rgba(255,107,53,0.15)', borderRadius: '25px', border: '1px solid rgba(255,107,53,0.4)' }}>
-              <span style={{ fontSize: '10px', color: '#FF6B35' }}>◉</span>
-              <span style={{ fontSize: '14px', color: '#FF6B35', fontWeight: '600' }}>cerca</span>
-            </div>
+            <span style={{ color: '#FF6B35', fontSize: '14px', padding: '8px 16px', background: 'rgba(255,107,53,0.15)', borderRadius: '20px' }}>◉ cerca</span>
           </div>
           
-          <div style={{ padding: '0 16px', paddingBottom: '140px' }}>
+          <div style={{ padding: '0 16px 140px' }}>
             {thoughts.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '60px 20px' }}>
                 <p style={{ fontSize: '48px' }}>🔥</p>
-                <p style={{ color: 'rgba(255,255,255,0.5)' }}>No hay pensamientos cerca</p>
+                <p style={{ color: 'rgba(255,255,255,0.5)' }}>No hay pensamientos</p>
                 <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: '14px' }}>¡Sé el primero!</p>
               </div>
             ) : thoughts.map(t => (
-              <div key={t.id} style={{ position: 'relative', background: 'linear-gradient(145deg, #F5E6D3 0%, #E8D5BC 50%, #DCC9AB 100%)', borderRadius: '6px', padding: '20px', marginBottom: '16px', overflow: 'hidden' }}>
-                <p style={{ fontSize: '16px', lineHeight: '1.65', color: '#2D2A26', margin: '0 0 16px 0', fontFamily: 'Georgia, serif', fontStyle: 'italic' }}>{t.text}</p>
+              <div key={t.id} style={{ background: 'linear-gradient(145deg, #F5E6D3, #DCC9AB)', borderRadius: '8px', padding: '20px', marginBottom: '16px' }}>
+                <p style={{ color: '#2D2A26', fontFamily: 'Georgia', fontStyle: 'italic', margin: '0 0 16px', lineHeight: '1.6' }}>{t.text}</p>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '10px', color: '#8B7355' }}>◉</span>
-                    <span style={{ fontSize: '13px', color: '#8B7355' }}>cerca · {t.timeAgo}</span>
-                  </div>
-                  <button onClick={(e) => handleFire(t.id, e)} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: t.hasFired ? 'rgba(255,107,53,0.25)' : 'rgba(255,107,53,0.1)', border: t.hasFired ? '2px solid #FF6B35' : '1px solid rgba(255,107,53,0.3)', borderRadius: '20px', padding: '6px 14px', cursor: 'pointer' }}>
+                  <span style={{ color: '#8B7355', fontSize: '13px' }}>◉ cerca · {t.timeAgo}</span>
+                  <button onClick={() => handleFire(t.id)} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,107,53,0.15)', border: '1px solid rgba(255,107,53,0.3)', borderRadius: '20px', padding: '6px 14px', cursor: 'pointer' }}>
                     <span>🔥</span>
-                    <span style={{ fontWeight: '700', color: t.hasFired ? '#FF6B35' : '#8B7355' }}>{t.fires}</span>
+                    <span style={{ color: '#8B7355', fontWeight: '700' }}>{t.fires}</span>
                   </button>
                 </div>
               </div>
             ))}
           </div>
           
-          <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: '20px', paddingTop: '60px', background: 'linear-gradient(0deg, #000 0%, #000 70%, transparent 100%)' }}>
-            <button onClick={() => thoughtsLeft > 0 ? setScreen('write') : setShowPurchase(true)} style={{ width: '100%', maxWidth: '400px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', padding: '18px 32px', background: 'linear-gradient(135deg, #FF6B35 0%, #FF4500 50%, #DC143C 100%)', border: 'none', borderRadius: '16px', cursor: 'pointer', boxShadow: '0 8px 32px rgba(255,107,53,0.5)' }}>
+          <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: '20px', background: 'linear-gradient(transparent, #000 30%)' }}>
+            <button onClick={() => setScreen('write')} style={{ width: '100%', maxWidth: '400px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', padding: '18px', background: 'linear-gradient(135deg, #FF6B35, #DC143C)', border: 'none', borderRadius: '16px', cursor: 'pointer' }}>
               <span style={{ fontSize: '24px' }}>🔥</span>
-              <span style={{ fontSize: '20px', fontWeight: '800', color: '#fff', letterSpacing: '3px' }}>SOLTAR</span>
-              <span style={{ fontSize: '18px', color: 'rgba(255,255,255,0.8)' }}>({thoughtsLeft})</span>
+              <span style={{ fontSize: '20px', fontWeight: '800', color: '#fff' }}>SOLTAR</span>
+              <span style={{ color: 'rgba(255,255,255,0.8)' }}>({thoughtsLeft})</span>
             </button>
           </div>
-        </div>
+        </>
       ) : (
-        <div style={{ minHeight: '100vh', background: '#000', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '50px 20px 20px' }}>
-            <button onClick={() => setScreen('feed')} style={{ background: 'rgba(255,107,53,0.2)', border: '1px solid rgba(255,107,53,0.4)', borderRadius: '50%', width: '44px', height: '44px', color: '#FF6B35', fontSize: '24px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>←</button>
+        <>
+          <div style={{ padding: '50px 20px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <button onClick={() => setScreen('feed')} style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'rgba(255,107,53,0.2)', border: '1px solid rgba(255,107,53,0.4)', color: '#FF6B35', fontSize: '24px', cursor: 'pointer' }}>←</button>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '28px' }}>🔥</span>
-              <span style={{ fontSize: '24px', fontWeight: '900', background: 'linear-gradient(135deg, #FF6B35, #FFD700)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>FIRE</span>
+              <span style={{ fontSize: '24px', fontWeight: '900', color: '#FF6B35' }}>FIRE</span>
             </div>
-            <div style={{ width: '44px' }} />
+            <div style={{ width: '44px' }}></div>
           </div>
           
-          <div style={{ flex: 1, padding: '20px' }}>
-            <div style={{ background: 'linear-gradient(145deg, #F5E6D3, #DCC9AB)', borderRadius: '8px', padding:
+          <div style={{ padding: '20px' }}>
+            <div style={{ background: 'linear-gradient(145deg, #F5E6D3, #DCC9AB)', borderRadius: '8px', padding: '24px' }}>
+              <textarea 
+                value={newThought} 
+                onChange={handleTextChange} 
+                placeholder="qué traes atorado..." 
+                autoFocus
+                style={{ width: '100%', height: '150px', background: 'transparent', border: 'none', outline: 'none', resize: 'none', fontSize: '18px', color: '#2D2A26', fontFamily: 'Georgia', fontStyle: 'italic' }}
+              />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '16px' }}>
+              <div style={{ flex: 1, height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '3px', marginRight: '12px' }}>
+                <div style={{ width: `${(newThought.length/200)*100}%`, height: '100%', background: '#FF6B35', borderRadius: '3px' }}></div>
+              </div>
+              <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '14px' }}>{newThought.length}/200</span>
+            </div>
+          </div>
+          
+          <div style={{ padding: '20px', position: 'fixed', bottom: 0, left: 0, right: 0 }}>
+            <button onClick={releaseThought} disabled={!newThought.trim()} style={{ width: '100%', maxWidth: '400px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', padding: '18px', background: newThought.trim() ? 'linear-gradient(135deg, #FF6B35, #DC143C)' : 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '16px', cursor: newThought.trim() ? 'pointer' : 'not-allowed' }}>
+              <span style={{ fontSize: '24px' }}>🔥</span>
+              <span style={{ fontSize: '20px', fontWeight: '800', color: '#fff' }}>SOLTAR</span>
+            </button>
+            <p style={{ textAlign: 'center', color: 'rgba(255,255,255,0.4)', marginTop: '16px', fontSize: '14px' }}>🔒 nadie sabe que eres tú · te quedan {thoughtsLeft}</p>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
