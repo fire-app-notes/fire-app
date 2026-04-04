@@ -1,6 +1,16 @@
+import './globals.css';
+
 export const metadata = {
   title: 'FIRE 🔥',
-  description: 'Pensamientos anónimos cerca de ti',
+  description: 'Pensamientos anónimos que flotan cerca de ti. Desaparecen en 24 horas.',
+  viewport: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no',
+  themeColor: '#000000',
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'FIRE',
+  },
 };
 
 export default function RootLayout({ children }) {
@@ -8,12 +18,8 @@ export default function RootLayout({ children }) {
     <html lang="es">
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-        <meta name="theme-color" content="#000000" />
-        <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔥</text></svg>" />
       </head>
-      <body style={{ margin: 0, padding: 0, backgroundColor: '#000' }}>
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
