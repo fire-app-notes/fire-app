@@ -845,10 +845,20 @@ export default function FireNotesApp() {
               <div style={{ ...styles.rule, borderTop: '1px solid #222', paddingTop: 12, marginTop: 8, color: '#FF5252' }}><span>❌</span> Sin amenazas ni acoso</div>
             </div>
             
-            <div style={styles.warningBox}>
-              <p style={{ fontWeight: 700, color: '#FFD700', margin: 0 }}>⚠️ IMPORTANTE</p>
-              <p style={{ fontSize: 13, color: '#CCC', margin: '8px 0 0 0' }}>
-                Anónimo ≠ Invisible. Guardamos registros técnicos. Si haces algo ilegal, cooperamos con las autoridades.
+            <div style={{
+              marginTop: 20,
+              padding: 16,
+              borderRadius: 12,
+              border: '2px solid #FFD700',
+              background: 'linear-gradient(135deg, rgba(255,215,0,0.15) 0%, rgba(255,107,53,0.1) 100%)',
+              textAlign: 'center'
+            }}>
+              <p style={{ fontWeight: 800, color: '#FFD700', margin: 0, fontSize: 16, letterSpacing: 1 }}>⚠️ IMPORTANTE ⚠️</p>
+              <p style={{ fontSize: 14, color: '#FFF', margin: '10px 0 0 0', lineHeight: 1.5 }}>
+                Eres <span style={{ color: '#4CAF50', fontWeight: 700 }}>anónimo</span> pero <span style={{ color: '#FF5252', fontWeight: 700 }}>NO invisible</span>.
+              </p>
+              <p style={{ fontSize: 12, color: '#AAA', margin: '8px 0 0 0' }}>
+                Guardamos registros. Actividad ilegal = autoridades.
               </p>
             </div>
             
