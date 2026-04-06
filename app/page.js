@@ -11,14 +11,15 @@ const supabase = createClient(
 );
 
 // ============================================================
+// CONSTANTES DE LA APP
+// ============================================================
+const RADIO_KM = 1; // Radio fijo de 1 km - NO CAMBIAR
+const MAX_NOTAS_GRATIS = 3;
+const MAX_VIDEOS_DIA = 3;
+
+// ============================================================
 // DEVICE FINGERPRINT
 // ============================================================
-// ¿Por qué esto? Si alguien borra localStorage, el device_id se pierde.
-// El fingerprint usa características del navegador que NO se pueden borrar:
-// tamaño de pantalla, zona horaria, idioma, canvas rendering, etc.
-// Así aunque borren todo, los reconocemos.
-// ============================================================
-
 function generateFingerprint() {
   try {
     const components = [
@@ -31,17 +32,15 @@ function generateFingerprint() {
       navigator.platform,
       navigator.hardwareConcurrency,
       navigator.maxTouchPoints,
-      // Canvas fingerprint - cada dispositivo dibuja ligeramente diferente
       getCanvasFingerprint(),
     ];
     
     const raw = components.filter(Boolean).join('|');
-    // Simple hash
     let hash = 0;
     for (let i = 0; i < raw.length; i++) {
       const char = raw.charCodeAt(i);
       hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // Convert to 32bit integer
+      hash = hash & hash;
     }
     return 'fp_' + Math.abs(hash).toString(36);
   } catch (e) {
@@ -72,14 +71,9 @@ function getCanvasFingerprint() {
 // ============================================================
 // DEVICE ID - Guardado en MÚLTIPLES lugares
 // ============================================================
-// Si borran uno, lo recuperamos de otro.
-// localStorage, sessionStorage, cookie, indexedDB
-// ============================================================
-
 function getDeviceId() {
   if (typeof window === 'undefined') return 'server';
   
-  // Intentar recuperar de múltiples fuentes
   const sources = [
     () => localStorage.getItem('fire_did'),
     () => sessionStorage.getItem('fire_did'),
@@ -94,12 +88,10 @@ function getDeviceId() {
     } catch (e) {}
   }
   
-  // Si no hay en ningún lado, crear nuevo
   if (!id) {
     id = 'dev_' + crypto.randomUUID();
   }
   
-  // Guardar en TODOS los lugares
   saveDeviceId(id);
   return id;
 }
@@ -123,6 +115,28 @@ function getCookie(name) {
 // ============================================================
 // HELPERS
 // ============================================================
+
+// Calcular distancia entre dos puntos usando fórmula Haversine
+function calcularDistanciaKm(lat1, lng1, lat2, lng2) {
+  // Validar que todos los parámetros sean números válidos
+  if (!lat1 || !lng1 || !lat2 || !lng2) {
+    console.error('❌ Coordenadas inválidas:', { lat1, lng1, lat2, lng2 });
+    return 999; // Retornar distancia muy grande para excluir
+  }
+  
+  const R = 6371; // Radio de la Tierra en km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLng/2) * Math.sin(dLng/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const distancia = R * c;
+  
+  return distancia;
+}
+
 function timeAgo(dateString) {
   const diffMs = Date.now() - new Date(dateString).getTime();
   const diffMin = Math.floor(diffMs / 60000);
@@ -131,6 +145,14 @@ function timeAgo(dateString) {
   const diffHr = Math.floor(diffMin / 60);
   if (diffHr < 24) return `hace ${diffHr}h`;
   return 'hace 1d';
+}
+
+// Calcular qué tan "quemada" está la nota (para efectos visuales)
+function calcularQuemado(dateString) {
+  const diffMs = Date.now() - new Date(dateString).getTime();
+  const horasVivida = diffMs / (1000 * 60 * 60);
+  // De 0 a 1, donde 1 = muy quemada (cerca de 24h)
+  return Math.min(horasVivida / 24, 1);
 }
 
 function validarTexto(texto) {
@@ -147,12 +169,12 @@ export default function FireApp() {
   const [notas, setNotas] = useState([]);
   const [texto, setTexto] = useState('');
   const [ubicacion, setUbicacion] = useState(null);
+  const [ubicacionStatus, setUbicacionStatus] = useState('obteniendo'); // 'obteniendo', 'ok', 'error', 'denegado'
   const [deviceId, setDeviceId] = useState('');
   const [fingerprint, setFingerprint] = useState('');
   const [cargando, setCargando] = useState(true);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState('');
-
 
   // Daily usage
   const [pensamientosUsados, setPensamientosUsados] = useState(0);
@@ -164,8 +186,9 @@ export default function FireApp() {
   const [mostrarModal, setMostrarModal] = useState(false);
   const [mostrarInfo, setMostrarInfo] = useState(false);
   const [mostrarExito, setMostrarExito] = useState(false);
-  const [mostrarReporte, setMostrarReporte] = useState(null); // nota id
+  const [mostrarReporte, setMostrarReporte] = useState(null);
   const [mostrarTerminos, setMostrarTerminos] = useState(false);
+  const [mostrarDebug, setMostrarDebug] = useState(false);
 
   // Reactions
   const [misReacciones, setMisReacciones] = useState(new Set());
@@ -175,8 +198,11 @@ export default function FireApp() {
   const notasRestantes = tieneIlimitado ? '∞' : Math.max(0, totalDisponible - pensamientosUsados);
   const puedeEscribir = tieneIlimitado || pensamientosUsados < totalDisponible;
 
+  // Ref para el watchId de geolocalización
+  const watchIdRef = useRef(null);
+  
   // ============================================================
-  // INIT
+  // INIT - UBICACIÓN EN TIEMPO REAL
   // ============================================================
   useEffect(() => {
     const id = getDeviceId();
@@ -185,25 +211,78 @@ export default function FireApp() {
     setFingerprint(fp);
 
     if (navigator.geolocation) {
+      setUbicacionStatus('obteniendo');
+      
+      // PRIMERO: Obtener ubicación rápida
       navigator.geolocation.getCurrentPosition(
-        (pos) => setUbicacion({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => setUbicacion({ lat: 19.4326, lng: -99.1332 }),
-        { enableHighAccuracy: true, timeout: 10000 }
+        (pos) => {
+          console.log('📍 Ubicación inicial:', pos.coords.latitude, pos.coords.longitude);
+          console.log('📍 Precisión:', pos.coords.accuracy, 'metros');
+          setUbicacion({ 
+            lat: pos.coords.latitude, 
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy 
+          });
+          setUbicacionStatus('ok');
+        },
+        (err) => {
+          console.log('⚠️ Error ubicación:', err.code, err.message);
+          if (err.code === 1) {
+            // Usuario denegó permiso
+            setUbicacionStatus('denegado');
+          } else {
+            setUbicacionStatus('error');
+          }
+          // NO usar ubicación por defecto - mostrar error al usuario
+        },
+        { enableHighAccuracy: true, timeout: 15000 }
+      );
+      
+      // SEGUNDO: Monitorear cambios de ubicación EN TIEMPO REAL
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        (pos) => {
+          const newLat = pos.coords.latitude;
+          const newLng = pos.coords.longitude;
+          
+          setUbicacion(prev => {
+            // Solo actualizar si se movió más de 50 metros
+            if (prev && prev.lat && prev.lng) {
+              const distancia = calcularDistanciaKm(prev.lat, prev.lng, newLat, newLng) * 1000;
+              if (distancia < 50) return prev;
+              console.log(`📍 Ubicación actualizada! Movimiento: ${distancia.toFixed(0)}m`);
+            }
+            return { lat: newLat, lng: newLng, accuracy: pos.coords.accuracy };
+          });
+          setUbicacionStatus('ok');
+        },
+        (err) => console.log('⚠️ Error watchPosition:', err.message),
+        { 
+          enableHighAccuracy: true, 
+          timeout: 30000,
+          maximumAge: 60000
+        }
       );
     } else {
-      setUbicacion({ lat: 19.4326, lng: -99.1332 });
+      setUbicacionStatus('error');
     }
+
+    // Cleanup
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
-    if (ubicacion && deviceId && fingerprint) {
+    if (ubicacion && ubicacion.lat && ubicacion.lng && deviceId && fingerprint) {
       cargarTodo();
     }
   }, [ubicacion, deviceId, fingerprint]);
 
   // Auto-refresh every 30s
   useEffect(() => {
-    if (!ubicacion || !deviceId) return;
+    if (!ubicacion || !ubicacion.lat || !deviceId) return;
     const interval = setInterval(cargarNotas, 30000);
     return () => clearInterval(interval);
   }, [ubicacion, deviceId]);
@@ -223,29 +302,79 @@ export default function FireApp() {
   };
 
   const cargarNotas = async () => {
+    if (!ubicacion || !ubicacion.lat || !ubicacion.lng) {
+      console.log('⚠️ No hay ubicación válida, no se cargan notas');
+      return;
+    }
+    
+    console.log(`\n🔍 ====== CARGANDO NOTAS ======`);
+    console.log(`📍 Mi ubicación: (${ubicacion.lat.toFixed(6)}, ${ubicacion.lng.toFixed(6)})`);
+    console.log(`🎯 Radio de búsqueda: ${RADIO_KM}km`);
+    
     try {
-      const { data, error: err } = await supabase.rpc('buscar_cercanos', {
-        lat: ubicacion.lat,
-        lng: ubicacion.lng,
-        radio_km: 1,
-      });
-      if (err) throw err;
-      setNotas(data || []);
-    } catch (e) {
-      console.error('Fetch notes error:', e);
-      // Fallback directo (solo funciona si RLS permite SELECT)
-      try {
-        const { data } = await supabase
-          .from('pensamientos')
-          .select('id, texto, latitud, longitud, fires, created_at, expires_at')
-          .gt('expires_at', new Date().toISOString())
-          .eq('oculto', false)
-          .order('created_at', { ascending: false })
-          .limit(50);
-        setNotas(data || []);
-      } catch (e2) {
-        console.error('Fallback failed:', e2);
+      const { data, error: dbError } = await supabase
+        .from('pensamientos')
+        .select('id, texto, latitud, longitud, fires, created_at, expires_at')
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false })
+        .limit(200);
+      
+      if (dbError) {
+        console.error('❌ Error DB:', dbError.message);
+        return;
       }
+      
+      console.log(`📊 Total notas en DB (no expiradas): ${data?.length || 0}`);
+      
+      // FILTRAR ESTRICTAMENTE POR DISTANCIA
+      const notasFiltradas = [];
+      const notasExcluidas = [];
+      
+      (data || []).forEach(nota => {
+        // Verificar que la nota tenga coordenadas válidas
+        if (!nota.latitud || !nota.longitud) {
+          console.log(`   ⚠️ Nota sin coordenadas: "${nota.texto.substring(0,20)}..."`);
+          return;
+        }
+        
+        const distancia = calcularDistanciaKm(
+          ubicacion.lat, 
+          ubicacion.lng, 
+          nota.latitud, 
+          nota.longitud
+        );
+        
+        // CRÍTICO: Solo incluir si está a EXACTAMENTE 1km o menos
+        if (distancia <= RADIO_KM) {
+          notasFiltradas.push({
+            ...nota, 
+            distancia: distancia.toFixed(3),
+            distanciaMetros: Math.round(distancia * 1000)
+          });
+          console.log(`   ✅ INCLUIDA (${distancia.toFixed(3)}km): "${nota.texto.substring(0,30)}..."`);
+        } else {
+          notasExcluidas.push({
+            texto: nota.texto.substring(0, 30),
+            distancia: distancia.toFixed(3)
+          });
+        }
+      });
+      
+      // Mostrar resumen de excluidas
+      if (notasExcluidas.length > 0) {
+        console.log(`\n❌ NOTAS EXCLUIDAS (> ${RADIO_KM}km):`);
+        notasExcluidas.forEach(n => {
+          console.log(`   - "${n.texto}..." a ${n.distancia}km`);
+        });
+      }
+      
+      console.log(`\n🎯 RESULTADO: ${notasFiltradas.length} notas dentro de ${RADIO_KM}km`);
+      console.log(`============================\n`);
+      
+      setNotas(notasFiltradas);
+      
+    } catch (e) {
+      console.error('❌ Error cargando notas:', e);
     }
 
     // Load reactions
@@ -279,9 +408,14 @@ export default function FireApp() {
   };
 
   // ============================================================
-  // PUBLICAR - usa función del servidor (validación allá)
+  // PUBLICAR
   // ============================================================
   const publicar = async () => {
+    if (!ubicacion || !ubicacion.lat || !ubicacion.lng) {
+      setError('Necesitamos tu ubicación para publicar. Permite el acceso en tu navegador.');
+      return;
+    }
+    
     if (!puedeEscribir) {
       setMostrarModal(true);
       return;
@@ -293,6 +427,8 @@ export default function FireApp() {
 
     setEnviando(true);
     setError('');
+
+    console.log(`📝 Publicando nota en: (${ubicacion.lat.toFixed(6)}, ${ubicacion.lng.toFixed(6)})`);
 
     try {
       const { data, error: err } = await supabase.rpc('publicar_pensamiento', {
@@ -316,9 +452,9 @@ export default function FireApp() {
         return;
       }
 
-      // Éxito
+      // Éxito - agregar distancia 0 porque es nuestra propia nota
       setPensamientosUsados(data.usados);
-      setNotas((prev) => [data.nota, ...prev]);
+      setNotas((prev) => [{...data.nota, distancia: '0.000', distanciaMetros: 0}, ...prev]);
       setTexto('');
       setMostrarExito(true);
       setTimeout(() => {
@@ -376,9 +512,6 @@ export default function FireApp() {
   const verVideo = async () => {
     try {
       // TODO: Integrar AdMob / Unity Ads aquí
-      // Cuando integres ads reales, el video debe completarse
-      // ANTES de llamar esta función.
-      
       const { data, error: err } = await supabase.rpc('ver_video', {
         p_device_id: deviceId,
         p_fingerprint: fingerprint,
@@ -400,7 +533,6 @@ export default function FireApp() {
   // ============================================================
   const comprar = async (tipo) => {
     // TODO: Integrar Stripe / RevenueCat aquí
-    // La compra debe verificarse del lado del servidor ANTES de registrarla
     try {
       const { error: err } = await supabase.from('compras').insert({
         device_id: deviceId,
@@ -429,7 +561,6 @@ export default function FireApp() {
       });
       if (data?.ok) {
         setMostrarReporte(null);
-        // Si tiene 5+ reportes, remover del feed local
         if (data.reportes >= 10) {
           setNotas((prev) => prev.filter((n) => n.id !== notaId));
         }
@@ -443,6 +574,31 @@ export default function FireApp() {
   // RENDER
   // ============================================================
 
+  // Si no hay ubicación o fue denegada, mostrar pantalla de error
+  if (ubicacionStatus === 'denegado') {
+    return (
+      <div style={S.container}>
+        <div style={S.ubicacionError}>
+          <span style={{ fontSize: '64px', marginBottom: '20px' }}>📍</span>
+          <h2 style={{ color: '#FFD700', marginBottom: '12px' }}>FIRE necesita tu ubicación</h2>
+          <p style={{ color: '#AAA', marginBottom: '24px', lineHeight: '1.6' }}>
+            Las notas solo son visibles a 1km de ti.
+            <br/>Sin ubicación, no podemos mostrarte nada.
+          </p>
+          <p style={{ color: '#888', fontSize: '14px', marginBottom: '20px' }}>
+            Permite el acceso a ubicación en la configuración de tu navegador.
+          </p>
+          <button 
+            onClick={() => window.location.reload()} 
+            style={{...S.soltarBtn, maxWidth: '200px'}}
+          >
+            Reintentar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={S.container}>
       {/* ===== HEADER ===== */}
@@ -452,59 +608,161 @@ export default function FireApp() {
           <span style={{ fontSize: '28px' }}>🔥</span>
           <span style={S.logoText}>FIRE</span>
         </div>
-        <div style={S.contador}>{notasRestantes}</div>
+        {/* CONTADOR VISUAL CON NOTITAS */}
+        <div style={S.contadorWrap} onClick={() => setMostrarDebug(!mostrarDebug)}>
+          {tieneIlimitado ? (
+            <span style={S.contadorInfinito}>∞</span>
+          ) : (
+            <div style={S.contadorNotas}>
+              {[...Array(MAX_NOTAS_GRATIS)].map((_, i) => {
+                const restantes = totalDisponible - pensamientosUsados;
+                const disponible = i < restantes;
+                const esUltima = i === restantes - 1 && restantes > 0;
+                return (
+                  <span 
+                    key={i} 
+                    style={{
+                      fontSize: '18px',
+                      opacity: disponible ? 1 : 0.2,
+                      transition: 'all 0.4s ease',
+                      transform: disponible ? 'scale(1)' : 'scale(0.7)',
+                      animation: esUltima ? 'pulse 1.5s infinite' : 'none',
+                    }}
+                  >
+                    {disponible ? '📝' : '⬜'}
+                  </span>
+                );
+              })}
+              {/* Mostrar extras */}
+              {(totalDisponible - pensamientosUsados) > MAX_NOTAS_GRATIS && (
+                <span style={S.contadorExtra}>
+                  +{(totalDisponible - pensamientosUsados) - MAX_NOTAS_GRATIS}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
       </header>
+
+      {/* ===== DEBUG INFO (tap en contador para mostrar) ===== */}
+      {mostrarDebug && ubicacion && (
+        <div style={S.debugBar}>
+          <span>📍 {ubicacion.lat.toFixed(5)}, {ubicacion.lng.toFixed(5)}</span>
+          <span> | </span>
+          <span>±{Math.round(ubicacion.accuracy || 0)}m</span>
+          <span> | </span>
+          <span>📊 {notas.length} notas en {RADIO_KM}km</span>
+        </div>
+      )}
+
+      {/* ===== INDICADOR DE ZONA ===== */}
+      {!cargando && pantalla === 'feed' && (
+        <div style={S.zonaIndicador}>
+          {ubicacionStatus === 'obteniendo' ? (
+            <span>📍 Obteniendo ubicación...</span>
+          ) : notas.length === 0 ? (
+            <span>❄️ Tu zona está fría - sé el primero en escribir</span>
+          ) : notas.length < 5 ? (
+            <span>🌡️ {notas.length} {notas.length === 1 ? 'nota cerca de ti' : 'notas cerca de ti'}</span>
+          ) : notas.length < 15 ? (
+            <span>🔥 Tu zona está tibia - {notas.length} notas</span>
+          ) : (
+            <span style={{ color: '#FF6B35' }}>🔥🔥🔥 ¡Zona caliente! - {notas.length} notas</span>
+          )}
+        </div>
+      )}
 
       {/* ===== FEED ===== */}
       {pantalla === 'feed' && (
         <main style={S.feed}>
           {cargando ? (
             <div style={S.empty}>
-              <div style={S.spinner} />
-              <p style={S.emptyText}>Buscando notas cerca...</p>
+              <div style={S.spinner}></div>
+              <p style={S.emptyText}>Buscando notas cerca de ti...</p>
             </div>
           ) : notas.length === 0 ? (
             <div style={S.empty}>
-              <span style={{ fontSize: '48px' }}>🔥</span>
-              <p style={S.emptyText}>No hay notas cerca de ti.</p>
-              <p style={S.emptySubtext}>Sé el primero en soltar un pensamiento.</p>
+              <span style={{ fontSize: '48px', marginBottom: '8px' }}>🔥</span>
+              <p style={S.emptyText}>No hay notas cerca de ti</p>
+              <p style={S.emptySubtext}>Sé el primero en soltar un pensamiento</p>
             </div>
           ) : (
             <div style={S.notasGrid}>
-              {notas.map((nota, i) => (
-                <div 
-                  key={nota.id} 
-                  style={{
-                    ...S.nota,
-                    transform: `rotate(${(i % 2 === 0 ? 1 : -1) * (0.5 + (i % 3) * 0.5)}deg)`,
-                  }}
-                >
-                  <div style={S.notaLines} />
-                  <p style={S.notaTexto}>{nota.texto}</p>
-                  <div style={S.notaFooter}>
-                    <span style={S.notaTiempo}>{timeAgo(nota.created_at)}</span>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <button
-                        onClick={() => setMostrarReporte(nota.id)}
-                        style={S.reportBtn}
-                        title="Reportar"
-                      >
-                        ⚑
-                      </button>
-                      <button
-                        onClick={() => hacerFire(nota.id)}
-                        style={{
-                          ...S.fireBtn,
-                          opacity: misReacciones.has(nota.id) ? 1 : 0.5,
-                          transform: misReacciones.has(nota.id) ? 'scale(1.1)' : 'scale(1)',
-                        }}
-                      >
-                        🔥 {nota.fires || 0}
-                      </button>
+              {notas.map((nota) => {
+                const quemado = calcularQuemado(nota.created_at);
+                const estaArdiendo = nota.fires >= 10;
+                const tieneReaccion = misReacciones.has(nota.id);
+                
+                return (
+                  <div 
+                    key={nota.id} 
+                    style={{
+                      ...S.nota,
+                      // Efecto de quemado según antigüedad
+                      opacity: 1 - (quemado * 0.3),
+                      // Borde brillante si está ardiendo
+                      boxShadow: estaArdiendo 
+                        ? '2px 4px 12px rgba(0,0,0,0.4), 0 0 20px rgba(255,107,53,0.4)'
+                        : '2px 4px 12px rgba(0,0,0,0.4)',
+                      border: estaArdiendo ? '2px solid rgba(255,107,53,0.5)' : 'none',
+                    }}
+                  >
+                    {/* Líneas del papel */}
+                    <div style={S.notaLines} />
+                    
+                    {/* Efecto de bordes quemados */}
+                    {quemado > 0.7 && (
+                      <div style={{
+                        position: 'absolute',
+                        top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'linear-gradient(135deg, transparent 85%, rgba(139,69,19,0.2) 100%)',
+                        borderRadius: '4px',
+                        pointerEvents: 'none',
+                      }} />
+                    )}
+                    
+                    {/* Texto */}
+                    <p style={S.notaTexto}>{nota.texto}</p>
+                    
+                    {/* Footer */}
+                    <div style={S.notaFooter}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={S.notaTiempo}>{timeAgo(nota.created_at)}</span>
+                        {/* Mostrar distancia */}
+                        <span style={{ fontSize: '10px', color: '#AAA' }}>
+                          ({nota.distanciaMetros || 0}m)
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {/* Reportar */}
+                        <button
+                          onClick={() => setMostrarReporte(nota.id)}
+                          style={S.reportBtn}
+                        >
+                          ⚑
+                        </button>
+                        {/* Fire */}
+                        <button
+                          onClick={() => hacerFire(nota.id)}
+                          style={{
+                            ...S.fireBtn,
+                            transform: tieneReaccion ? 'scale(1.1)' : 'scale(1)',
+                            backgroundColor: tieneReaccion ? 'rgba(255,107,53,0.1)' : 'transparent',
+                          }}
+                        >
+                          <span style={{ 
+                            display: 'inline-block',
+                            animation: estaArdiendo ? 'flicker 0.5s infinite' : 'none',
+                          }}>
+                            🔥
+                          </span>
+                          <span style={{ marginLeft: '4px' }}>{nota.fires}</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </main>
@@ -543,6 +801,13 @@ export default function FireApp() {
           <button onClick={() => { setPantalla('feed'); setError(''); }} style={S.cancelBtn}>
             Cancelar
           </button>
+          
+          {/* Mostrar ubicación donde se publicará */}
+          {ubicacion && (
+            <p style={{ color: '#555', fontSize: '12px', textAlign: 'center', marginTop: '8px' }}>
+              📍 Se publicará en tu ubicación actual
+            </p>
+          )}
         </main>
       )}
 
@@ -629,9 +894,12 @@ export default function FireApp() {
         <div style={S.overlay} onClick={() => setMostrarInfo(false)}>
           <div style={S.modal} onClick={(e) => e.stopPropagation()}>
             <h2 style={S.modalTitle}>🔥 FIRE</h2>
+            <p style={{ textAlign: 'center', color: '#888', fontStyle: 'italic', marginBottom: '16px' }}>
+              Pensamientos anónimos que flotan a 1km
+            </p>
             
             <div style={S.infoSection}>
-              <h3 style={S.infoSectionTitle}>Lo que SÍ puedes hacer</h3>
+              <h3 style={S.infoSectionTitle}>✅ Lo que SÍ puedes hacer</h3>
               <p style={S.infoRule}>Decir lo que piensas sin filtro</p>
               <p style={S.infoRule}>Quejarte de lo que sea</p>
               <p style={S.infoRule}>Confesar algo (sin nombres)</p>
@@ -640,7 +908,7 @@ export default function FireApp() {
             </div>
 
             <div style={S.infoSection}>
-              <h3 style={{...S.infoSectionTitle, color: '#E63946'}}>Lo que te BANEA</h3>
+              <h3 style={{...S.infoSectionTitle, color: '#E63946'}}>❌ Lo que te BANEA</h3>
               <p style={S.infoRule}>Amenazar a alguien con nombre</p>
               <p style={S.infoRule}>Contenido de menores de edad</p>
               <p style={S.infoRule}>Cosas ilegales en serio</p>
@@ -680,27 +948,95 @@ export default function FireApp() {
             <h2 style={S.modalTitle}>Términos y Privacidad</h2>
             
             <div style={S.legalText}>
-              <h3 style={S.legalTitle}>Términos de Uso</h3>
+              <h3 style={S.legalTitle}>1. TÉRMINOS DE USO</h3>
               <p>Al usar FIRE aceptas estas condiciones:</p>
               <p>FIRE es una plataforma de expresión anónima. No requiere registro ni datos personales. Cada pensamiento publicado es visible solo para personas dentro de un radio de un kilómetro y desaparece automáticamente después de veinticuatro horas.</p>
-              <p><strong>Contenido prohibido:</strong> Amenazas directas o indirectas contra personas identificables. Cualquier contenido sexual que involucre menores de edad. Incitación a la violencia. Acoso dirigido a personas identificables. Venta o promoción de sustancias ilegales o armas. Cualquier actividad ilegal.</p>
-              <p><strong>Consecuencias:</strong> Las notas que reciban cinco o más reportes serán eliminadas automáticamente. Los dispositivos con tres o más notas eliminadas serán suspendidos temporalmente. En caso de actividad ilegal, nos reservamos el derecho de cooperar con las autoridades competentes proporcionando la información técnica disponible, que puede incluir identificadores de dispositivo, direcciones IP y marcas de tiempo.</p>
-              <p><strong>Monetización:</strong> Tres pensamientos gratuitos por día. Posibilidad de obtener pensamientos adicionales mediante visualización de anuncios en video o compras dentro de la aplicación. Los precios están sujetos a cambios.</p>
-              <p><strong>Exención de responsabilidad:</strong> FIRE no se hace responsable del contenido publicado por los usuarios. Nos reservamos el derecho de eliminar cualquier contenido y suspender el acceso a cualquier dispositivo sin previo aviso.</p>
+              
+              <p><strong>1.1 Contenido prohibido:</strong></p>
+              <p>• Amenazas directas o indirectas contra personas identificables</p>
+              <p>• Cualquier contenido sexual que involucre menores de edad</p>
+              <p>• Incitación a la violencia</p>
+              <p>• Acoso dirigido a personas identificables</p>
+              <p>• Venta o promoción de sustancias ilegales o armas</p>
+              <p>• Cualquier actividad ilegal</p>
+              
+              <p><strong>1.2 Consecuencias:</strong></p>
+              <p>• Las notas que reciban cinco o más reportes serán eliminadas automáticamente</p>
+              <p>• Los dispositivos con tres o más notas eliminadas serán suspendidos temporalmente</p>
+              <p>• En caso de actividad ilegal, nos reservamos el derecho de cooperar con las autoridades competentes proporcionando la información técnica disponible</p>
+              
+              <p><strong>1.3 Monetización:</strong></p>
+              <p>• Tres pensamientos gratuitos por día</p>
+              <p>• Posibilidad de obtener pensamientos adicionales mediante visualización de anuncios en video o compras dentro de la aplicación</p>
+              <p>• Los precios están sujetos a cambios</p>
+              
+              <p><strong>1.4 Exención de responsabilidad:</strong></p>
+              <p>FIRE no se hace responsable del contenido publicado por los usuarios. Nos reservamos el derecho de eliminar cualquier contenido y suspender el acceso a cualquier dispositivo sin previo aviso.</p>
 
-              <h3 style={{...S.legalTitle, marginTop: '20px'}}>Aviso de Privacidad</h3>
+              <h3 style={{...S.legalTitle, marginTop: '24px'}}>2. AVISO DE PRIVACIDAD</h3>
               <p>En cumplimiento con la Ley Federal de Protección de Datos Personales en Posesión de los Particulares (LFPDPPP) de México:</p>
-              <p><strong>Datos que recopilamos:</strong> Identificador anónimo del dispositivo (generado automáticamente, no vinculado a tu identidad). Coordenadas geográficas aproximadas (solo para determinar la ubicación de la nota). Dirección IP (para prevención de abuso). Huella digital del navegador (para prevención de abuso). No recopilamos: nombre, correo electrónico, número de teléfono, fotografías ni ningún dato personal identificable.</p>
-              <p><strong>Uso de los datos:</strong> Mostrar notas cercanas a tu ubicación. Controlar el límite diario de publicaciones. Prevenir abuso y spam. Cumplir con requerimientos legales si aplica.</p>
-              <p><strong>Retención:</strong> Los pensamientos y datos asociados se eliminan automáticamente después de veinticuatro horas. Los registros de uso diario se mantienen por un máximo de treinta días. Los registros de baneos se mantienen mientras la suspensión esté activa.</p>
-              <p><strong>Derechos ARCO:</strong> Puedes ejercer tus derechos de Acceso, Rectificación, Cancelación y Oposición contactándonos. Dado que no recopilamos datos personales identificables, la mayoría de estos derechos se cumplen por diseño.</p>
-              <p><strong>Contacto:</strong> Para ejercer tus derechos ARCO o cualquier consulta sobre privacidad, contáctanos en el correo electrónico disponible en nuestra página de la tienda de aplicaciones.</p>
+              
+              <p><strong>2.1 Datos que recopilamos:</strong></p>
+              <p>• Identificador anónimo del dispositivo (generado automáticamente, no vinculado a tu identidad)</p>
+              <p>• Coordenadas geográficas aproximadas (solo para determinar la ubicación de la nota)</p>
+              <p>• Dirección IP (para prevención de abuso)</p>
+              <p>• Huella digital del navegador (para prevención de abuso)</p>
+              
+              <p><strong>No recopilamos:</strong> nombre, correo electrónico, número de teléfono, fotografías ni ningún dato personal identificable.</p>
+              
+              <p><strong>2.2 Uso de los datos:</strong></p>
+              <p>• Mostrar notas cercanas a tu ubicación</p>
+              <p>• Controlar el límite diario de publicaciones</p>
+              <p>• Prevenir abuso y spam</p>
+              <p>• Cumplir con requerimientos legales si aplica</p>
+              
+              <p><strong>2.3 Retención:</strong></p>
+              <p>• Los pensamientos y datos asociados se eliminan automáticamente después de veinticuatro horas</p>
+              <p>• Los registros de uso diario se mantienen por un máximo de treinta días</p>
+              <p>• Los registros de baneos se mantienen mientras la suspensión esté activa</p>
+              
+              <p><strong>2.4 Derechos ARCO:</strong></p>
+              <p>Puedes ejercer tus derechos de Acceso, Rectificación, Cancelación y Oposición contactándonos. Dado que no recopilamos datos personales identificables, la mayoría de estos derechos se cumplen por diseño.</p>
+              
+              <p><strong>2.5 Cooperación con autoridades:</strong></p>
+              <p>En caso de recibir un requerimiento legal válido (orden judicial, investigación criminal, etc.), podemos proporcionar a las autoridades competentes:</p>
+              <p>• Identificadores de dispositivo</p>
+              <p>• Direcciones IP</p>
+              <p>• Marcas de tiempo</p>
+              <p>• Contenido de las notas relacionadas</p>
+              <p>• Cualquier información técnica que pueda ayudar en la investigación</p>
+              
+              <p><strong>2.6 Contacto:</strong></p>
+              <p>Para ejercer tus derechos ARCO o cualquier consulta sobre privacidad, contáctanos en el correo electrónico disponible en nuestra página de la tienda de aplicaciones.</p>
+              
+              <p style={{ marginTop: '20px', fontStyle: 'italic', color: '#888' }}>
+                Última actualización: Abril 2026
+              </p>
             </div>
 
             <button onClick={() => setMostrarTerminos(false)} style={S.modalClose}>Cerrar</button>
           </div>
         </div>
       )}
+      
+      {/* ===== CSS ANIMATIONS ===== */}
+      <style jsx global>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+          to { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+        @keyframes pulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.2); }
+        }
+        @keyframes flicker {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.7; }
+        }
+      `}</style>
     </div>
   );
 }
@@ -717,6 +1053,17 @@ const S = {
     maxWidth: '480px',
     margin: '0 auto',
     position: 'relative',
+  },
+  
+  // UBICACIÓN ERROR
+  ubicacionError: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: '100dvh',
+    padding: '24px',
+    textAlign: 'center',
   },
   
   // HEADER
@@ -745,9 +1092,47 @@ const S = {
     WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
     letterSpacing: '3px',
   },
-  contador: {
-    fontSize: '20px', fontWeight: 'bold', color: '#FFD700',
-    minWidth: '24px', textAlign: 'center',
+  
+  // CONTADOR VISUAL
+  contadorWrap: {
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    minWidth: '70px', cursor: 'pointer',
+  },
+  contadorNotas: {
+    display: 'flex', alignItems: 'center', gap: '2px',
+  },
+  contadorExtra: {
+    fontSize: '12px', 
+    color: '#FFD700', 
+    marginLeft: '4px',
+    fontWeight: 'bold',
+    textShadow: '0 0 8px rgba(255,215,0,0.5)',
+  },
+  contadorInfinito: {
+    fontSize: '24px', fontWeight: 'bold', color: '#FFD700',
+    textShadow: '0 0 10px rgba(255, 215, 0, 0.5)',
+  },
+  
+  // DEBUG BAR
+  debugBar: {
+    backgroundColor: 'rgba(255,107,53,0.1)',
+    borderBottom: '1px solid #333',
+    padding: '6px 12px',
+    fontSize: '10px',
+    color: '#888',
+    fontFamily: 'monospace',
+    textAlign: 'center',
+  },
+  
+  // INDICADOR DE ZONA
+  zonaIndicador: {
+    textAlign: 'center',
+    padding: '10px 16px',
+    fontSize: '13px',
+    color: '#777',
+    fontStyle: 'italic',
+    backgroundColor: 'rgba(255,255,255,0.02)',
+    borderBottom: '1px solid #1a1a1a',
   },
 
   // FEED
@@ -770,6 +1155,7 @@ const S = {
     position: 'relative', backgroundColor: '#F5E6D3',
     borderRadius: '4px', padding: '20px',
     boxShadow: '2px 4px 12px rgba(0,0,0,0.4)', overflow: 'hidden',
+    transition: 'all 0.3s ease',
   },
   notaLines: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
@@ -833,11 +1219,12 @@ const S = {
   // FAB
   fab: {
     position: 'fixed', bottom: '24px', right: '24px',
-    width: '60px', height: '60px', borderRadius: '50%', border: 'none',
+    width: '64px', height: '64px', borderRadius: '50%', border: 'none',
     background: 'linear-gradient(135deg, #FF6B35, #E63946)',
-    fontSize: '24px', cursor: 'pointer',
-    boxShadow: '0 4px 20px rgba(230,57,70,0.5)',
+    fontSize: '26px', cursor: 'pointer',
+    boxShadow: '0 4px 24px rgba(230,57,70,0.6)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99,
+    transition: 'transform 0.2s ease',
   },
   toast: {
     position: 'fixed', top: '80px', left: '50%',
@@ -910,8 +1297,4 @@ const S = {
   legalTitle: {
     fontSize: '16px', color: '#FFD700', fontWeight: 'bold', marginBottom: '8px',
   },
-
 };
-
-
-
