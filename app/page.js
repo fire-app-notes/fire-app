@@ -464,19 +464,41 @@ export default function FireApp() {
   // REPORTAR
   // ============================================================
   const reportarNota = async (notaId) => {
+    console.log('🚨 Reportando nota:', notaId);
     try {
-      const { data } = await supabase.rpc('reportar_nota', {
+      const { data, error } = await supabase.rpc('reportar_nota', {
         p_pensamiento_id: notaId,
         p_device_id: deviceId,
         p_razon: 'contenido inapropiado',
       });
-      if (data?.ok) {
-        setMostrarReporte(null);
-        if (data.reportes >= 10) {
-          setNotas((prev) => prev.filter((n) => n.id !== notaId));
-        }
+      
+      console.log('📊 Respuesta reporte:', data, error);
+      
+      if (error) {
+        console.error('❌ Error al reportar:', error.message);
+        alert('Error al reportar. Intenta de nuevo.');
+        return;
       }
-    } catch (e) {}
+      
+      if (data?.ok) {
+        // Cerrar modal
+        setMostrarReporte(null);
+        
+        // Si la nota fue eliminada (5+ reportes), quitarla del feed
+        if (data.eliminado || data.reportes >= 5) {
+          setNotas((prev) => prev.filter((n) => n.id !== notaId));
+          alert('Nota reportada y eliminada. Gracias por ayudar.');
+        } else {
+          alert('Nota reportada. Gracias por ayudar.');
+        }
+      } else if (data?.error) {
+        alert(data.error);
+        setMostrarReporte(null);
+      }
+    } catch (e) {
+      console.error('❌ Error catch:', e);
+      alert('Error al reportar. Intenta de nuevo.');
+    }
   };
 
   // ============================================================
