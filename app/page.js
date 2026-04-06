@@ -835,14 +835,13 @@ export default function FireNotesApp() {
           <div style={styles.modal} onClick={e => e.stopPropagation()}>
             <div style={styles.modalIcon}>🔥</div>
             <h2 style={styles.modalTitle}>FIRE NOTES</h2>
-            <p style={styles.modalSub}>Tu voz anónima a 1km</p>
+            <p style={styles.modalSub}>Pensamientos anónimos cerca de ti</p>
             
             <div style={styles.rulesList}>
-              <div style={styles.rule}><span>💭</span> Suelta lo que sientes</div>
-              <div style={styles.rule}><span>🎭</span> Nadie sabe quién eres</div>
-              <div style={styles.rule}><span>📍</span> Solo te leen cerca de ti</div>
-              <div style={styles.rule}><span>⏰</span> Desaparece en 24h</div>
-              <div style={{ ...styles.rule, borderTop: '1px solid #222', paddingTop: 12, marginTop: 8, color: '#FF5252' }}><span>❌</span> Sin amenazas ni acoso</div>
+              <div style={styles.rule}><span>🎭</span> Eres 100% anónimo</div>
+              <div style={styles.rule}><span>📍</span> Solo te leen a 1km de ti</div>
+              <div style={styles.rule}><span>⏰</span> Todo desaparece en 24 horas</div>
+              <div style={styles.rule}><span>🔥</span> Dale fuego a lo que te guste</div>
             </div>
             
             <div style={{
@@ -853,12 +852,12 @@ export default function FireNotesApp() {
               background: 'linear-gradient(135deg, rgba(255,215,0,0.15) 0%, rgba(255,107,53,0.1) 100%)',
               textAlign: 'center'
             }}>
-              <p style={{ fontWeight: 800, color: '#FFD700', margin: 0, fontSize: 16, letterSpacing: 1 }}>⚠️ IMPORTANTE ⚠️</p>
-              <p style={{ fontSize: 14, color: '#FFF', margin: '10px 0 0 0', lineHeight: 1.5 }}>
-                Eres <span style={{ color: '#4CAF50', fontWeight: 700 }}>anónimo</span> pero <span style={{ color: '#FF5252', fontWeight: 700 }}>NO invisible</span>.
+              <p style={{ fontWeight: 800, color: '#FFD700', margin: 0, fontSize: 15 }}>⚠️ IMPORTANTE ⚠️</p>
+              <p style={{ fontSize: 14, color: '#FFF', margin: '10px 0 0 0', lineHeight: 1.6 }}>
+                Nadie ve tu nombre, pero <span style={{ color: '#FF5252', fontWeight: 700 }}>no hagas cosas ilegales</span>.
               </p>
-              <p style={{ fontSize: 12, color: '#AAA', margin: '8px 0 0 0' }}>
-                Guardamos registros. Actividad ilegal = autoridades.
+              <p style={{ fontSize: 12, color: '#999', margin: '6px 0 0 0' }}>
+                Amenazas o acoso = cooperamos con la ley.
               </p>
             </div>
             
