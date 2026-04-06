@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 // ============================================================================
-// CONFIGURACIÓN DE SUPABASE
+// CONFIGURACIÓN
 // ============================================================================
 
 const supabase = createClient(
@@ -16,129 +16,195 @@ const supabase = createClient(
 // CONSTANTES
 // ============================================================================
 
-const RADIO_KM = 1; // Radio de visibilidad de notas en kilómetros
-const MAX_CARACTERES = 200; // Máximo de caracteres por nota
-const MAX_NOTAS_GRATIS = 3; // Notas gratis por día
-const MAX_VIDEOS_DIA = 3; // Máximo de videos por día para obtener notas extra
+const RADIO_KM = 1;
+const MAX_CARACTERES = 200;
+const MAX_NOTAS_GRATIS = 3;
+const MAX_VIDEOS_DIA = 3;
+const COOLDOWN_SEGUNDOS = 30; // Cooldown entre publicaciones
 
 // ============================================================================
-// FUNCIONES DE UTILIDAD - SONIDOS
+// LISTA NEGRA DE PALABRAS (Backup mientras configuramos IA)
+// ============================================================================
+
+const PALABRAS_PROHIBIDAS = [
+  // Violencia
+  'matar', 'matarte', 'matarlo', 'matarla', 'matarlos', 'muerte', 'muerto', 'asesinar', 'asesinato',
+  'bomba', 'explotar', 'explosion', 'terrorista', 'terrorismo', 'balacera', 'disparo', 'disparar',
+  // Amenazas
+  'te voy a', 'voy a matarte', 'vas a morir', 'te busco', 'se donde vives', 'te encuentro',
+  // Sexual con menores
+  'niño', 'niña', 'menor', 'cp', 'child', 'kids',
+  // Drogas pesadas
+  'cristal', 'meta', 'heroina', 'fentanilo', 'crack',
+  // Otros
+  'violar', 'violacion', 'secuestrar', 'secuestro'
+];
+
+// ============================================================================
+// FUNCIONES DE SEGURIDAD
 // ============================================================================
 
 /**
- * Reproduce un sonido "pop" al dar fuego a una nota
+ * Verifica si el texto contiene palabras prohibidas
  */
-function playFireSound() {
-  try {
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
-    
-    oscillator.frequency.setValueAtTime(500, audioContext.currentTime);
-    oscillator.frequency.exponentialRampToValueAtTime(150, audioContext.currentTime + 0.1);
-    
-    gainNode.gain.setValueAtTime(0.12, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-    
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    
-    oscillator.start();
-    oscillator.stop(audioContext.currentTime + 0.1);
-  } catch (error) {
-    // Silenciar errores de audio
-  }
-}
-
-/**
- * Reproduce un sonido "whoosh" al publicar una nota
- */
-function playPublishSound() {
-  try {
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
-    
-    oscillator.frequency.setValueAtTime(400, audioContext.currentTime);
-    oscillator.frequency.exponentialRampToValueAtTime(80, audioContext.currentTime + 0.3);
-    
-    gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
-    
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    
-    oscillator.start();
-    oscillator.stop(audioContext.currentTime + 0.3);
-  } catch (error) {
-    // Silenciar errores de audio
-  }
-}
-
-/**
- * Hace vibrar el dispositivo (si está soportado)
- */
-function vibrate(milliseconds = 40) {
-  try {
-    if (navigator.vibrate) {
-      navigator.vibrate(milliseconds);
+function containsProhibitedWords(text) {
+  const textoLower = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  
+  for (const palabra of PALABRAS_PROHIBIDAS) {
+    const palabraNorm = palabra.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (textoLower.includes(palabraNorm)) {
+      return true;
     }
-  } catch (error) {
-    // Silenciar errores de vibración
   }
+  
+  return false;
+}
+
+/**
+ * Obtiene el tiempo restante de cooldown
+ */
+function getCooldownRemaining() {
+  const lastPost = localStorage.getItem('fire_last_post');
+  if (!lastPost) return 0;
+  
+  const elapsed = (Date.now() - parseInt(lastPost)) / 1000;
+  const remaining = COOLDOWN_SEGUNDOS - elapsed;
+  
+  return remaining > 0 ? Math.ceil(remaining) : 0;
+}
+
+/**
+ * Registra el tiempo de publicación
+ */
+function setLastPostTime() {
+  localStorage.setItem('fire_last_post', Date.now().toString());
 }
 
 // ============================================================================
-// FUNCIONES DE UTILIDAD - IDENTIFICACIÓN
+// FUNCIONES DE IDENTIFICACIÓN (MEJORADAS)
 // ============================================================================
 
 /**
  * Obtiene o genera un ID único para el dispositivo
+ * COMPATIBLE con versiones anteriores
  */
 function getDeviceId() {
   if (typeof window === 'undefined') return 'server';
   
-  let deviceId = localStorage.getItem('fire_device_id') || sessionStorage.getItem('fire_device_id');
+  // Buscar en todas las posibles keys anteriores para compatibilidad
+  const possibleKeys = ['fire_device_id', 'fire_did', 'fid'];
+  let deviceId = null;
   
+  for (const key of possibleKeys) {
+    const stored = localStorage.getItem(key) || sessionStorage.getItem(key);
+    if (stored) {
+      deviceId = stored;
+      break;
+    }
+  }
+  
+  // Si no existe, crear uno nuevo
   if (!deviceId) {
     deviceId = 'device_' + crypto.randomUUID();
-    localStorage.setItem('fire_device_id', deviceId);
-    sessionStorage.setItem('fire_device_id', deviceId);
+  }
+  
+  // Guardar en todas las keys para compatibilidad futura
+  for (const key of possibleKeys) {
+    localStorage.setItem(key, deviceId);
+    sessionStorage.setItem(key, deviceId);
   }
   
   return deviceId;
 }
 
 /**
- * Genera un fingerprint básico del dispositivo
+ * Genera un fingerprint más robusto del dispositivo
  */
 function generateFingerprint() {
   try {
     const components = [
+      // Pantalla
       screen.width,
       screen.height,
+      screen.colorDepth,
+      screen.pixelDepth,
+      window.devicePixelRatio,
+      
+      // Navegador
       navigator.language,
-      Intl.DateTimeFormat().resolvedOptions().timeZone
-    ].join('|');
+      navigator.languages?.join(','),
+      navigator.platform,
+      navigator.hardwareConcurrency,
+      navigator.maxTouchPoints,
+      
+      // Timezone
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+      new Date().getTimezoneOffset(),
+      
+      // Canvas fingerprint básico
+      getCanvasFingerprint(),
+      
+      // WebGL
+      getWebGLFingerprint(),
+    ].filter(Boolean).join('|');
     
+    // Generar hash
     let hash = 0;
     for (let i = 0; i < components.length; i++) {
-      hash = ((hash << 5) - hash) + components.charCodeAt(i);
+      const char = components.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
       hash = hash & hash;
     }
     
-    return 'fp_' + Math.abs(hash).toString(36);
+    return 'fp_' + Math.abs(hash).toString(36) + '_' + components.length;
   } catch (error) {
-    return 'fp_unknown';
+    return 'fp_fallback_' + Date.now().toString(36);
+  }
+}
+
+/**
+ * Genera fingerprint de canvas
+ */
+function getCanvasFingerprint() {
+  try {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.textBaseline = 'top';
+    ctx.font = '14px Arial';
+    ctx.fillText('Fire Notes 🔥', 2, 2);
+    return canvas.toDataURL().slice(-50);
+  } catch {
+    return 'no-canvas';
+  }
+}
+
+/**
+ * Genera fingerprint de WebGL
+ */
+function getWebGLFingerprint() {
+  try {
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    if (!gl) return 'no-webgl';
+    
+    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+    if (!debugInfo) return 'webgl-basic';
+    
+    const vendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL);
+    const renderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+    
+    return (vendor + renderer).slice(0, 50);
+  } catch {
+    return 'no-webgl';
   }
 }
 
 // ============================================================================
-// FUNCIONES DE UTILIDAD - GEOLOCALIZACIÓN
+// FUNCIONES DE UBICACIÓN
 // ============================================================================
 
 /**
- * Calcula la distancia en kilómetros entre dos puntos geográficos
+ * Calcula la distancia en kilómetros entre dos puntos
  */
 function calculateDistanceKm(lat1, lng1, lat2, lng2) {
   if (!lat1 || !lng1 || !lat2 || !lng2) return 999;
@@ -155,40 +221,109 @@ function calculateDistanceKm(lat1, lng1, lat2, lng2) {
   return EARTH_RADIUS_KM * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+/**
+ * Detecta si la ubicación cambió de forma sospechosa (teletransportación)
+ */
+function isLocationSuspicious(newLat, newLng, lastLat, lastLng, lastTime) {
+  if (!lastLat || !lastLng || !lastTime) return false;
+  
+  const distanceKm = calculateDistanceKm(lastLat, lastLng, newLat, newLng);
+  const timeHours = (Date.now() - lastTime) / (1000 * 60 * 60);
+  
+  // Velocidad en km/h
+  const speedKmh = distanceKm / timeHours;
+  
+  // Si "viajó" a más de 500 km/h, es sospechoso (avión normal ~900, pero damos margen)
+  // Pero si el tiempo es muy corto y la distancia es grande, definitivamente es fake
+  if (timeHours < 0.1 && distanceKm > 10) { // Menos de 6 min y más de 10km
+    return true;
+  }
+  
+  if (speedKmh > 1000) { // Más rápido que un avión comercial
+    return true;
+  }
+  
+  return false;
+}
+
 // ============================================================================
-// FUNCIONES DE UTILIDAD - FORMATO
+// FUNCIONES DE UTILIDAD
 // ============================================================================
 
 /**
- * Convierte una fecha a formato "hace X tiempo"
+ * Reproduce sonido de fuego
+ */
+function playFireSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    
+    osc.frequency.setValueAtTime(500, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(150, ctx.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.12, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.1);
+  } catch (e) {}
+}
+
+/**
+ * Reproduce sonido de publicación
+ */
+function playPublishSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    
+    osc.frequency.setValueAtTime(400, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.3);
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.3);
+  } catch (e) {}
+}
+
+/**
+ * Vibración
+ */
+function vibrate(ms = 40) {
+  try { navigator.vibrate?.(ms); } catch (e) {}
+}
+
+/**
+ * Formato de tiempo relativo
  */
 function timeAgo(dateString) {
   const minutes = Math.floor((Date.now() - new Date(dateString).getTime()) / 60000);
-  
   if (minutes < 1) return 'ahora';
   if (minutes < 60) return `${minutes}m`;
-  
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  
-  return '1d';
+  return hours < 24 ? `${hours}h` : '1d';
 }
 
 /**
- * Calcula el porcentaje de "quemado" de una nota (0 a 1)
+ * Calcula nivel de "quemado" (0 a 1)
  */
 function calculateBurnLevel(dateString) {
-  const millisecondsInDay = 1000 * 60 * 60 * 24;
   const elapsed = Date.now() - new Date(dateString).getTime();
-  return Math.min(elapsed / millisecondsInDay, 1);
+  return Math.min(elapsed / (1000 * 60 * 60 * 24), 1);
 }
 
 /**
- * Valida el texto de una nota
+ * Valida texto de nota
  */
 function isValidNoteText(text) {
-  const validPattern = /^[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ0-9\s.,;:!?¡¿'"()\-@#%&]+$/i;
-  return validPattern.test(text) && text.trim().length > 0 && text.length <= MAX_CARACTERES;
+  const pattern = /^[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ0-9\s.,;:!?¡¿'"()\-@#%&]+$/i;
+  return pattern.test(text) && text.trim().length > 0 && text.length <= MAX_CARACTERES;
 }
 
 // ============================================================================
@@ -197,142 +332,126 @@ function isValidNoteText(text) {
 
 export default function FireNotesApp() {
   
-  // --------------------------------------------------------------------------
-  // ESTADOS - Navegación
-  // --------------------------------------------------------------------------
+  // Estados - Navegación
+  const [activeTab, setActiveTab] = useState('feed');
+  const [currentScreen, setCurrentScreen] = useState('feed');
   
-  const [activeTab, setActiveTab] = useState('feed'); // 'feed' o 'myNotes'
-  const [currentScreen, setCurrentScreen] = useState('feed'); // 'feed' o 'write'
-  
-  // --------------------------------------------------------------------------
-  // ESTADOS - Datos
-  // --------------------------------------------------------------------------
-  
+  // Estados - Datos
   const [notes, setNotes] = useState([]);
   const [myNotes, setMyNotes] = useState([]);
   const [noteText, setNoteText] = useState('');
   const [myReactions, setMyReactions] = useState(new Set());
   
-  // --------------------------------------------------------------------------
-  // ESTADOS - Ubicación
-  // --------------------------------------------------------------------------
-  
+  // Estados - Ubicación
   const [location, setLocation] = useState(null);
-  const [locationStatus, setLocationStatus] = useState('loading'); // 'loading', 'ok', 'denied', 'error'
+  const [locationStatus, setLocationStatus] = useState('loading');
+  const [lastLocation, setLastLocation] = useState(null);
+  const [lastLocationTime, setLastLocationTime] = useState(null);
   
-  // --------------------------------------------------------------------------
-  // ESTADOS - Identificación
-  // --------------------------------------------------------------------------
-  
+  // Estados - Identificación
   const [deviceId, setDeviceId] = useState('');
   const [fingerprint, setFingerprint] = useState('');
   
-  // --------------------------------------------------------------------------
-  // ESTADOS - UI
-  // --------------------------------------------------------------------------
-  
+  // Estados - UI
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [isAnimating, setIsAnimating] = useState(false);
+  const [cooldownTime, setCooldownTime] = useState(0);
   
-  // --------------------------------------------------------------------------
-  // ESTADOS - Modales
-  // --------------------------------------------------------------------------
-  
+  // Estados - Modales
   const [showBuyModal, setShowBuyModal] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
-  const [showReportModal, setShowReportModal] = useState(null); // ID de la nota a reportar
+  const [showReportModal, setShowReportModal] = useState(null);
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
   
-  // --------------------------------------------------------------------------
-  // ESTADOS - Toasts
-  // --------------------------------------------------------------------------
-  
+  // Estados - Toasts
   const [showSuccessToast, setShowSuccessToast] = useState(false);
   const [showReportedToast, setShowReportedToast] = useState(false);
   
-  // --------------------------------------------------------------------------
-  // ESTADOS - Límites de uso
-  // --------------------------------------------------------------------------
-  
+  // Estados - Límites
   const [notesUsedToday, setNotesUsedToday] = useState(0);
   const [videosWatchedToday, setVideosWatchedToday] = useState(0);
   const [extraNotesBought, setExtraNotesBought] = useState(0);
   const [hasUnlimitedToday, setHasUnlimitedToday] = useState(false);
   
-  // --------------------------------------------------------------------------
-  // REFS
-  // --------------------------------------------------------------------------
-  
+  // Refs
   const locationWatchRef = useRef(null);
+  const cooldownIntervalRef = useRef(null);
   
-  // --------------------------------------------------------------------------
-  // CÁLCULOS DERIVADOS
-  // --------------------------------------------------------------------------
-  
-  const totalNotesAvailable = hasUnlimitedToday 
-    ? 999 
-    : MAX_NOTAS_GRATIS + videosWatchedToday + extraNotesBought;
-  
+  // Cálculos derivados
+  const totalNotesAvailable = hasUnlimitedToday ? 999 : MAX_NOTAS_GRATIS + videosWatchedToday + extraNotesBought;
   const canPostNote = hasUnlimitedToday || notesUsedToday < totalNotesAvailable;
-  
   const notesRemaining = totalNotesAvailable - notesUsedToday;
 
-  // --------------------------------------------------------------------------
-  // EFECTO - Inicialización
-  // --------------------------------------------------------------------------
+  // ============================================================================
+  // EFECTOS
+  // ============================================================================
   
   useEffect(() => {
-    // Configurar identificadores
+    // Inicializar identificadores
     setDeviceId(getDeviceId());
     setFingerprint(generateFingerprint());
     
-    // Mostrar bienvenida si es primera vez
-    if (!localStorage.getItem('fire_welcome_shown_v1')) {
+    // Verificar cooldown inicial
+    setCooldownTime(getCooldownRemaining());
+    
+    // Iniciar intervalo de cooldown
+    cooldownIntervalRef.current = setInterval(() => {
+      setCooldownTime(getCooldownRemaining());
+    }, 1000);
+    
+    // Bienvenida primera vez
+    if (!localStorage.getItem('fire_welcome_v2')) {
       setShowWelcomeModal(true);
-      localStorage.setItem('fire_welcome_shown_v1', 'true');
+      localStorage.setItem('fire_welcome_v2', 'true');
     }
     
-    // Configurar geolocalización
+    // Cargar última ubicación conocida
+    const savedLoc = localStorage.getItem('fire_last_location');
+    const savedTime = localStorage.getItem('fire_last_location_time');
+    if (savedLoc && savedTime) {
+      try {
+        const loc = JSON.parse(savedLoc);
+        setLastLocation(loc);
+        setLastLocationTime(parseInt(savedTime));
+      } catch (e) {}
+    }
+    
+    // Geolocalización
     if (navigator.geolocation) {
-      // Obtener ubicación inicial
       navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          });
+        (pos) => {
+          const newLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          
+          // Verificar si la ubicación es sospechosa
+          if (lastLocation && isLocationSuspicious(newLoc.lat, newLoc.lng, lastLocation.lat, lastLocation.lng, lastLocationTime)) {
+            console.warn('Ubicación sospechosa detectada');
+            // Aún permitimos, pero podríamos registrar esto en el backend
+          }
+          
+          setLocation(newLoc);
           setLocationStatus('ok');
+          
+          // Guardar para detectar teletransportación
+          localStorage.setItem('fire_last_location', JSON.stringify(newLoc));
+          localStorage.setItem('fire_last_location_time', Date.now().toString());
         },
-        (error) => {
-          setLocationStatus(error.code === 1 ? 'denied' : 'error');
-        },
+        (err) => setLocationStatus(err.code === 1 ? 'denied' : 'error'),
         { enableHighAccuracy: true, timeout: 15000 }
       );
       
-      // Observar cambios de ubicación
       locationWatchRef.current = navigator.geolocation.watchPosition(
-        (position) => {
-          setLocation(prevLocation => {
-            // Solo actualizar si se movió más de 50 metros
-            if (!prevLocation) {
-              return { lat: position.coords.latitude, lng: position.coords.longitude };
+        (pos) => {
+          setLocation(prev => {
+            const newLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+            if (!prev || calculateDistanceKm(prev.lat, prev.lng, newLoc.lat, newLoc.lng) * 1000 > 50) {
+              localStorage.setItem('fire_last_location', JSON.stringify(newLoc));
+              localStorage.setItem('fire_last_location_time', Date.now().toString());
+              return newLoc;
             }
-            
-            const distanceMoved = calculateDistanceKm(
-              prevLocation.lat, 
-              prevLocation.lng, 
-              position.coords.latitude, 
-              position.coords.longitude
-            ) * 1000;
-            
-            if (distanceMoved > 50) {
-              return { lat: position.coords.latitude, lng: position.coords.longitude };
-            }
-            
-            return prevLocation;
+            return prev;
           });
         },
         () => {},
@@ -342,64 +461,37 @@ export default function FireNotesApp() {
       setLocationStatus('error');
     }
     
-    // Cleanup
     return () => {
-      if (locationWatchRef.current) {
-        navigator.geolocation.clearWatch(locationWatchRef.current);
-      }
+      if (locationWatchRef.current) navigator.geolocation.clearWatch(locationWatchRef.current);
+      if (cooldownIntervalRef.current) clearInterval(cooldownIntervalRef.current);
     };
   }, []);
 
-  // --------------------------------------------------------------------------
-  // EFECTO - Cargar datos cuando hay ubicación
-  // --------------------------------------------------------------------------
-  
   useEffect(() => {
-    if (location?.lat && deviceId) {
-      loadAllData();
-    }
+    if (location?.lat && deviceId) loadAllData();
   }, [location, deviceId]);
 
-  // --------------------------------------------------------------------------
-  // EFECTO - Actualizar notas periódicamente
-  // --------------------------------------------------------------------------
-  
   useEffect(() => {
     if (!location?.lat || !deviceId) return;
-    
     const interval = setInterval(loadNearbyNotes, 30000);
-    
     return () => clearInterval(interval);
   }, [location, deviceId]);
 
-  // --------------------------------------------------------------------------
-  // FUNCIONES - Carga de datos
-  // --------------------------------------------------------------------------
+  // ============================================================================
+  // FUNCIONES DE CARGA
+  // ============================================================================
   
-  /**
-   * Carga todos los datos necesarios
-   */
   async function loadAllData() {
     setIsLoading(true);
-    
-    await Promise.all([
-      loadNearbyNotes(),
-      loadMyNotes(),
-      loadUserState()
-    ]);
-    
+    await Promise.all([loadNearbyNotes(), loadMyNotes(), loadUserState()]);
     setIsLoading(false);
   }
 
-  /**
-   * Carga las notas cercanas a la ubicación actual
-   */
   async function loadNearbyNotes() {
     if (!location?.lat) return;
     
     try {
-      // Obtener notas activas
-      const { data: notesData } = await supabase
+      const { data } = await supabase
         .from('pensamientos')
         .select('id, texto, latitud, longitud, fires, created_at, expires_at, device_id')
         .gt('expires_at', new Date().toISOString())
@@ -407,34 +499,28 @@ export default function FireNotesApp() {
         .order('created_at', { ascending: false })
         .limit(200);
       
-      // Filtrar por distancia y agregar metros
-      const nearbyNotes = (notesData || [])
-        .filter(note => calculateDistanceKm(location.lat, location.lng, note.latitud, note.longitud) <= RADIO_KM)
-        .map(note => ({
-          ...note,
-          distanceMeters: Math.round(calculateDistanceKm(location.lat, location.lng, note.latitud, note.longitud) * 1000)
+      const nearby = (data || [])
+        .filter(n => calculateDistanceKm(location.lat, location.lng, n.latitud, n.longitud) <= RADIO_KM)
+        .map(n => ({
+          ...n,
+          distanceMeters: Math.round(calculateDistanceKm(location.lat, location.lng, n.latitud, n.longitud) * 1000)
         }));
       
-      setNotes(nearbyNotes);
+      setNotes(nearby);
       
-      // Cargar mis reacciones
-      const { data: reactionsData } = await supabase
+      const { data: reactions } = await supabase
         .from('reacciones')
         .select('pensamiento_id')
         .eq('device_id', deviceId);
       
-      if (reactionsData) {
-        setMyReactions(new Set(reactionsData.map(r => r.pensamiento_id)));
+      if (reactions) {
+        setMyReactions(new Set(reactions.map(r => r.pensamiento_id)));
       }
-      
-    } catch (error) {
-      console.error('Error cargando notas:', error);
+    } catch (e) {
+      console.error('Error cargando notas:', e);
     }
   }
 
-  /**
-   * Carga mis propias notas
-   */
   async function loadMyNotes() {
     if (!deviceId) return;
     
@@ -448,15 +534,11 @@ export default function FireNotesApp() {
         .order('created_at', { ascending: false });
       
       setMyNotes(data || []);
-      
-    } catch (error) {
-      console.error('Error cargando mis notas:', error);
+    } catch (e) {
+      console.error('Error cargando mis notas:', e);
     }
   }
 
-  /**
-   * Carga el estado del usuario (notas usadas, videos vistos, etc.)
-   */
   async function loadUserState() {
     try {
       const { data } = await supabase.rpc('obtener_estado', {
@@ -470,33 +552,45 @@ export default function FireNotesApp() {
         setHasUnlimitedToday(data.ilimitado || false);
         setExtraNotesBought(data.extras || 0);
       }
-      
-    } catch (error) {
-      console.error('Error cargando estado:', error);
+    } catch (e) {
+      console.error('Error cargando estado:', e);
     }
   }
 
-  // --------------------------------------------------------------------------
-  // FUNCIONES - Acciones del usuario
-  // --------------------------------------------------------------------------
+  // ============================================================================
+  // FUNCIONES DE ACCIÓN
+  // ============================================================================
 
-  /**
-   * Publica una nueva nota
-   */
   async function publishNote() {
-    // Validaciones
+    // Validar ubicación
     if (!location?.lat) {
       setErrorMessage('Necesitamos tu ubicación para publicar');
       return;
     }
     
+    // Validar cooldown
+    const remaining = getCooldownRemaining();
+    if (remaining > 0) {
+      setErrorMessage(`Espera ${remaining} segundos para publicar otra nota`);
+      return;
+    }
+    
+    // Validar notas disponibles
     if (!canPostNote) {
       setShowBuyModal(true);
       return;
     }
     
+    // Validar texto
     if (!isValidNoteText(noteText)) {
-      setErrorMessage('Solo letras, números y puntuación básica. Máximo 200 caracteres.');
+      setErrorMessage('Solo letras, números y puntuación. Máx 200 caracteres.');
+      return;
+    }
+    
+    // Validar palabras prohibidas
+    if (containsProhibitedWords(noteText)) {
+      setErrorMessage('Tu nota contiene contenido no permitido. Por favor, modifícala.');
+      vibrate(100);
       return;
     }
     
@@ -514,25 +608,24 @@ export default function FireNotesApp() {
       
       if (error || !data.ok) {
         setErrorMessage(data?.error || 'Error al publicar');
-        if (data?.sin_notas) {
-          setShowBuyModal(true);
-        }
+        if (data?.sin_notas) setShowBuyModal(true);
         setIsSending(false);
         return;
       }
       
-      // Éxito
+      // Éxito - registrar tiempo para cooldown
+      setLastPostTime();
+      setCooldownTime(COOLDOWN_SEGUNDOS);
+      
       setIsAnimating(true);
       playPublishSound();
       vibrate(80);
       
-      // Actualizar estados
       setNotesUsedToday(data.usados);
       setNotes(prev => [{ ...data.nota, distanceMeters: 0 }, ...prev]);
       setMyNotes(prev => [data.nota, ...prev]);
       setNoteText('');
       
-      // Mostrar toast y volver al feed
       setTimeout(() => {
         setIsAnimating(false);
         setShowSuccessToast(true);
@@ -542,45 +635,30 @@ export default function FireNotesApp() {
         }, 1200);
       }, 400);
       
-    } catch (error) {
+    } catch (e) {
       setErrorMessage('Error de conexión');
     } finally {
       setIsSending(false);
     }
   }
 
-  /**
-   * Da o quita fuego a una nota
-   */
   async function toggleFire(noteId) {
     const alreadyLiked = myReactions.has(noteId);
-    
-    // Feedback inmediato
     playFireSound();
     vibrate(25);
     
-    // Actualizar UI optimistamente
     setMyReactions(prev => {
       const next = new Set(prev);
-      if (alreadyLiked) {
-        next.delete(noteId);
-      } else {
-        next.add(noteId);
-      }
+      alreadyLiked ? next.delete(noteId) : next.add(noteId);
       return next;
     });
     
-    const updateNotes = (prevNotes) => prevNotes.map(note => {
-      if (note.id === noteId) {
-        return { ...note, fires: note.fires + (alreadyLiked ? -1 : 1) };
-      }
-      return note;
-    });
+    const update = prev => prev.map(n => 
+      n.id === noteId ? { ...n, fires: n.fires + (alreadyLiked ? -1 : 1) } : n
+    );
+    setNotes(update);
+    setMyNotes(update);
     
-    setNotes(updateNotes);
-    setMyNotes(updateNotes);
-    
-    // Sincronizar con servidor
     try {
       const { data } = await supabase.rpc('toggle_fire', {
         p_pensamiento_id: noteId,
@@ -588,25 +666,13 @@ export default function FireNotesApp() {
       });
       
       if (data?.fires !== undefined) {
-        const syncNotes = (prevNotes) => prevNotes.map(note => {
-          if (note.id === noteId) {
-            return { ...note, fires: data.fires };
-          }
-          return note;
-        });
-        
-        setNotes(syncNotes);
-        setMyNotes(syncNotes);
+        const sync = prev => prev.map(n => n.id === noteId ? { ...n, fires: data.fires } : n);
+        setNotes(sync);
+        setMyNotes(sync);
       }
-      
-    } catch (error) {
-      console.error('Error al dar fuego:', error);
-    }
+    } catch (e) {}
   }
 
-  /**
-   * Ve un video para obtener una nota extra
-   */
   async function watchVideoForNote() {
     try {
       const { data } = await supabase.rpc('ver_video', {
@@ -619,15 +685,9 @@ export default function FireNotesApp() {
         setShowBuyModal(false);
         vibrate(40);
       }
-      
-    } catch (error) {
-      console.error('Error al ver video:', error);
-    }
+    } catch (e) {}
   }
 
-  /**
-   * Compra notas extra
-   */
   async function purchaseNotes(type) {
     try {
       await supabase.from('compras').insert({
@@ -644,15 +704,9 @@ export default function FireNotesApp() {
       
       setShowBuyModal(false);
       vibrate(40);
-      
-    } catch (error) {
-      console.error('Error al comprar:', error);
-    }
+    } catch (e) {}
   }
 
-  /**
-   * Reporta una nota
-   */
   async function reportNote(noteId) {
     try {
       const { data, error } = await supabase.rpc('reportar_nota', {
@@ -666,40 +720,34 @@ export default function FireNotesApp() {
         return;
       }
       
-      // Cerrar modal
       setShowReportModal(null);
       vibrate(25);
       
-      // Mostrar confirmación si fue exitoso
       if (data?.ok) {
         setShowReportedToast(true);
         setTimeout(() => setShowReportedToast(false), 2000);
         
-        // Si fue eliminada, quitarla de la lista
         if (data.eliminado) {
           setNotes(prev => prev.filter(n => n.id !== noteId));
           setMyNotes(prev => prev.filter(n => n.id !== noteId));
         }
       }
-      
-    } catch (error) {
+    } catch (e) {
       alert('Error de conexión');
     }
   }
 
-  // --------------------------------------------------------------------------
-  // RENDER - Pantalla de ubicación denegada
-  // --------------------------------------------------------------------------
+  // ============================================================================
+  // RENDER - Ubicación denegada
+  // ============================================================================
   
   if (locationStatus === 'denied') {
     return (
       <div style={styles.container}>
         <div style={styles.centerContent}>
-          <div style={{ fontSize: '72px', marginBottom: '20px' }}>📍</div>
-          <h2 style={{ color: '#FF6B35', marginBottom: '12px' }}>
-            Activa tu ubicación
-          </h2>
-          <p style={{ color: '#999', marginBottom: '24px', lineHeight: 1.6, maxWidth: '280px' }}>
+          <div style={{ fontSize: 72, marginBottom: 20 }}>📍</div>
+          <h2 style={{ color: '#FF6B35', marginBottom: 12 }}>Activa tu ubicación</h2>
+          <p style={{ color: '#999', marginBottom: 24, lineHeight: 1.6, maxWidth: 280 }}>
             FIRE NOTES muestra notas a 1km de ti. Sin ubicación no funciona.
           </p>
           <button onClick={() => location.reload()} style={styles.primaryButton}>
@@ -710,53 +758,35 @@ export default function FireNotesApp() {
     );
   }
 
-  // --------------------------------------------------------------------------
-  // RENDER - Aplicación principal
-  // --------------------------------------------------------------------------
+  // ============================================================================
+  // RENDER - App Principal
+  // ============================================================================
   
   return (
     <div style={styles.container}>
       
-      {/* ================================================================== */}
       {/* HEADER */}
-      {/* ================================================================== */}
-      
       <header style={styles.header}>
-        {/* Botón de información */}
-        <button 
-          onClick={() => setShowInfoModal(true)} 
-          style={styles.infoButton}
-        >
-          ?
-        </button>
+        <button onClick={() => setShowInfoModal(true)} style={styles.infoButton}>?</button>
         
-        {/* Logo */}
         <div style={styles.logoContainer}>
-          <span style={{ fontSize: '26px' }}>🔥</span>
+          <span style={{ fontSize: 26 }}>🔥</span>
           <span style={styles.logoText}>FIRE</span>
           <span style={styles.logoSubtext}>NOTES</span>
         </div>
         
-        {/* Contador de notas */}
         <div style={styles.notesCounter}>
           {hasUnlimitedToday ? (
-            <span style={{ color: '#FFD700', fontSize: '20px', fontWeight: 700 }}>∞</span>
+            <span style={{ color: '#FFD700', fontSize: 20, fontWeight: 700 }}>∞</span>
           ) : (
             <>
-              {[...Array(3)].map((_, index) => (
-                <span 
-                  key={index} 
-                  style={{ 
-                    fontSize: '16px', 
-                    opacity: index < notesRemaining ? 1 : 0.2, 
-                    transition: '0.3s' 
-                  }}
-                >
-                  {index < notesRemaining ? '📝' : '⬜'}
+              {[...Array(3)].map((_, i) => (
+                <span key={i} style={{ fontSize: 16, opacity: i < notesRemaining ? 1 : 0.2, transition: '0.3s' }}>
+                  {i < notesRemaining ? '📝' : '⬜'}
                 </span>
               ))}
               {notesRemaining > 3 && (
-                <span style={{ color: '#FFD700', fontSize: '12px', fontWeight: 700, marginLeft: 4 }}>
+                <span style={{ color: '#FFD700', fontSize: 12, fontWeight: 700, marginLeft: 4 }}>
                   +{notesRemaining - 3}
                 </span>
               )}
@@ -765,66 +795,43 @@ export default function FireNotesApp() {
         </div>
       </header>
 
-      {/* ================================================================== */}
       {/* TABS */}
-      {/* ================================================================== */}
-      
       {currentScreen === 'feed' && (
         <div style={styles.tabsContainer}>
           <button 
             onClick={() => setActiveTab('feed')} 
-            style={{ 
-              ...styles.tab, 
-              ...(activeTab === 'feed' ? styles.tabActive : {}) 
-            }}
+            style={{ ...styles.tab, ...(activeTab === 'feed' ? styles.tabActive : {}) }}
           >
             🌍 Cerca de ti
           </button>
           <button 
             onClick={() => setActiveTab('myNotes')} 
-            style={{ 
-              ...styles.tab, 
-              ...(activeTab === 'myNotes' ? styles.tabActive : {}) 
-            }}
+            style={{ ...styles.tab, ...(activeTab === 'myNotes' ? styles.tabActive : {}) }}
           >
             📝 Tus notas ({myNotes.length})
           </button>
         </div>
       )}
 
-      {/* ================================================================== */}
       {/* INDICADOR DE ZONA */}
-      {/* ================================================================== */}
-      
       {!isLoading && currentScreen === 'feed' && activeTab === 'feed' && (
         <div style={styles.zoneIndicator}>
           {notes.length === 0 && '❄️ Zona fría - sé el primero'}
           {notes.length > 0 && notes.length < 5 && `🌡️ ${notes.length} nota${notes.length > 1 ? 's' : ''} cerca`}
           {notes.length >= 5 && notes.length < 15 && `🔥 ¡Zona activa! - ${notes.length} notas`}
-          {notes.length >= 15 && (
-            <span style={{ color: '#FF6B35' }}>
-              🔥🔥🔥 ¡Zona caliente! - {notes.length} notas
-            </span>
-          )}
+          {notes.length >= 15 && <span style={{ color: '#FF6B35' }}>🔥🔥🔥 ¡Zona caliente! - {notes.length} notas</span>}
         </div>
       )}
 
-      {/* ================================================================== */}
-      {/* FEED DE NOTAS */}
-      {/* ================================================================== */}
-      
+      {/* FEED */}
       {currentScreen === 'feed' && (
         <main style={styles.feedContainer}>
           {isLoading ? (
-            // Estado de carga
             <div style={styles.centerContent}>
               <div style={styles.spinner}></div>
-              <p style={{ color: '#666', marginTop: 16 }}>
-                Buscando notas cerca de ti...
-              </p>
+              <p style={{ color: '#666', marginTop: 16 }}>Buscando notas cerca de ti...</p>
             </div>
           ) : (activeTab === 'feed' ? notes : myNotes).length === 0 ? (
-            // Sin notas
             <div style={styles.centerContent}>
               <div style={{ fontSize: 52 }}>🔥</div>
               <p style={{ color: '#888', marginTop: 12 }}>
@@ -835,11 +842,11 @@ export default function FireNotesApp() {
               </p>
             </div>
           ) : (
-            // Lista de notas
             <div style={styles.notesGrid}>
               {(activeTab === 'feed' ? notes : myNotes).map((note, index) => {
                 const burnLevel = calculateBurnLevel(note.created_at);
                 const isHot = note.fires >= 10;
+                const isMediumHot = note.fires >= 5 && note.fires < 10;
                 const isLiked = myReactions.has(note.id);
                 
                 return (
@@ -849,52 +856,66 @@ export default function FireNotesApp() {
                       ...styles.noteCard,
                       opacity: 1 - burnLevel * 0.25,
                       boxShadow: isHot 
-                        ? '0 8px 32px rgba(0,0,0,0.4), 0 0 20px rgba(255,107,53,0.3)' 
-                        : '0 4px 20px rgba(0,0,0,0.35)',
+                        ? '0 8px 32px rgba(255,107,53,0.4), 0 0 30px rgba(255,107,53,0.2), inset 0 0 20px rgba(255,107,53,0.05)'
+                        : isMediumHot 
+                          ? '0 6px 24px rgba(255,152,0,0.3), 0 0 15px rgba(255,152,0,0.1)'
+                          : '0 4px 20px rgba(0,0,0,0.35)',
                       border: isHot 
-                        ? '2px solid rgba(255,107,53,0.4)' 
-                        : '1px solid rgba(255,255,255,0.05)',
-                      animation: `noteAppear 0.35s ease ${index * 0.03}s both`,
+                        ? '2px solid rgba(255,107,53,0.5)' 
+                        : isMediumHot 
+                          ? '1px solid rgba(255,152,0,0.3)'
+                          : '1px solid rgba(255,255,255,0.05)',
+                      animation: `noteAppear 0.4s ease ${index * 0.04}s both`,
+                      transform: isHot ? 'scale(1.02)' : 'scale(1)',
                     }}
                   >
+                    {/* Efecto de brillo para notas calientes */}
+                    {isHot && <div style={styles.hotGlow}></div>}
+                    
                     {/* Líneas de papel */}
                     <div style={styles.noteLines}></div>
+                    
+                    {/* Indicador de popularidad */}
+                    {isHot && (
+                      <div style={styles.hotBadge}>
+                        🔥 HOT
+                      </div>
+                    )}
                     
                     {/* Efecto de quemado */}
                     {burnLevel > 0.75 && <div style={styles.burnEffect}></div>}
                     
-                    {/* Texto de la nota */}
+                    {/* Texto */}
                     <p style={styles.noteText}>{note.texto}</p>
                     
-                    {/* Footer de la nota */}
+                    {/* Footer */}
                     <div style={styles.noteFooter}>
                       <span style={styles.noteTime}>
                         {timeAgo(note.created_at)}
-                        {activeTab === 'feed' ? ` (${note.distanceMeters}m)` : ''}
+                        {activeTab === 'feed' ? ` · ${note.distanceMeters}m` : ''}
                       </span>
                       
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        {/* Botón de reportar */}
-                        <button 
-                          onClick={() => setShowReportModal(note.id)} 
-                          style={styles.reportButton}
-                        >
+                        <button onClick={() => setShowReportModal(note.id)} style={styles.reportButton}>
                           ⚑
                         </button>
                         
-                        {/* Botón de fuego */}
                         <button 
                           onClick={() => toggleFire(note.id)} 
                           style={{ 
                             ...styles.fireButton,
-                            background: isLiked ? 'rgba(255,107,53,0.15)' : 'transparent',
-                            transform: isLiked ? 'scale(1.1)' : 'scale(1)',
+                            background: isLiked ? 'rgba(255,107,53,0.2)' : 'transparent',
+                            transform: isLiked ? 'scale(1.15)' : 'scale(1)',
+                            boxShadow: isLiked ? '0 0 10px rgba(255,107,53,0.3)' : 'none',
                           }}
                         >
-                          <span style={{ animation: isHot ? 'flicker 0.5s infinite' : 'none' }}>
+                          <span style={{ 
+                            animation: isHot ? 'flicker 0.4s infinite' : 'none',
+                            fontSize: isHot ? 20 : 16,
+                          }}>
                             🔥
                           </span>
-                          <span style={{ fontWeight: 600, marginLeft: 4 }}>
+                          <span style={{ fontWeight: 700, marginLeft: 4, color: isHot ? '#FF6B35' : '#2D2A26' }}>
                             {note.fires}
                           </span>
                         </button>
@@ -908,27 +929,14 @@ export default function FireNotesApp() {
         </main>
       )}
 
-      {/* ================================================================== */}
-      {/* PANTALLA DE ESCRIBIR */}
-      {/* ================================================================== */}
-      
+      {/* PANTALLA ESCRIBIR */}
       {currentScreen === 'write' && (
         <main style={styles.writeContainer}>
-          {/* Papel para escribir */}
-          <div 
-            style={{ 
-              ...styles.writePaper,
-              ...(isAnimating ? { animation: 'flyUp 0.4s ease forwards' } : {})
-            }}
-          >
+          <div style={{ ...styles.writePaper, ...(isAnimating ? { animation: 'flyUp 0.4s ease forwards' } : {}) }}>
             <div style={styles.noteLines}></div>
             <textarea 
               value={noteText} 
-              onChange={(e) => {
-                if (e.target.value.length <= MAX_CARACTERES) {
-                  setNoteText(e.target.value);
-                }
-              }} 
+              onChange={(e) => e.target.value.length <= MAX_CARACTERES && setNoteText(e.target.value)} 
               placeholder="Suelta tu pensamiento..." 
               style={styles.textInput}
               autoFocus 
@@ -936,42 +944,38 @@ export default function FireNotesApp() {
             <div style={styles.charCounter}>
               <span style={{ color: noteText.length > 180 ? '#E63946' : '#8B7355' }}>
                 {noteText.length}
-              </span>
-              /{MAX_CARACTERES}
+              </span>/{MAX_CARACTERES}
             </div>
           </div>
           
-          {/* Mensaje de error */}
           {errorMessage && (
-            <p style={{ color: '#FF5252', textAlign: 'center', fontSize: 14 }}>
+            <p style={{ color: '#FF5252', textAlign: 'center', fontSize: 14, padding: '0 10px' }}>
               {errorMessage}
             </p>
           )}
           
-          {/* Botón de publicar */}
+          {/* Indicador de cooldown */}
+          {cooldownTime > 0 && (
+            <div style={styles.cooldownIndicator}>
+              ⏱️ Podrás publicar en {cooldownTime}s
+            </div>
+          )}
+          
           <button 
             onClick={publishNote} 
-            disabled={isSending || !noteText.trim()} 
+            disabled={isSending || !noteText.trim() || cooldownTime > 0} 
             style={{ 
               ...styles.primaryButton, 
-              opacity: isSending || !noteText.trim() ? 0.5 : 1 
+              opacity: isSending || !noteText.trim() || cooldownTime > 0 ? 0.5 : 1 
             }}
           >
-            {isSending ? 'Soltando...' : '🔥 SOLTAR'}
+            {isSending ? 'Soltando...' : cooldownTime > 0 ? `Espera ${cooldownTime}s` : '🔥 SOLTAR'}
           </button>
           
-          {/* Botón de cancelar */}
-          <button 
-            onClick={() => { 
-              setCurrentScreen('feed'); 
-              setErrorMessage(''); 
-            }} 
-            style={styles.ghostButton}
-          >
+          <button onClick={() => { setCurrentScreen('feed'); setErrorMessage(''); }} style={styles.ghostButton}>
             Cancelar
           </button>
           
-          {/* Indicador de ubicación */}
           {location && (
             <p style={{ color: '#555', fontSize: 12, textAlign: 'center', marginTop: 8 }}>
               📍 Se publicará en tu ubicación actual
@@ -980,10 +984,7 @@ export default function FireNotesApp() {
         </main>
       )}
 
-      {/* ================================================================== */}
-      {/* FAB (Botón flotante) */}
-      {/* ================================================================== */}
-      
+      {/* FAB */}
       {currentScreen === 'feed' && (
         <button 
           onClick={() => canPostNote ? setCurrentScreen('write') : setShowBuyModal(true)} 
@@ -993,46 +994,27 @@ export default function FireNotesApp() {
         </button>
       )}
 
-      {/* ================================================================== */}
       {/* TOASTS */}
-      {/* ================================================================== */}
-      
-      {showSuccessToast && (
-        <div style={styles.toast}>
-          🔥 ¡Nota soltada!
-        </div>
-      )}
-      
-      {showReportedToast && (
-        <div style={{ ...styles.toast, background: 'rgba(76,175,80,0.95)' }}>
-          ✓ Nota reportada
-        </div>
-      )}
+      {showSuccessToast && <div style={styles.toast}>🔥 ¡Nota soltada!</div>}
+      {showReportedToast && <div style={{ ...styles.toast, background: 'rgba(76,175,80,0.95)' }}>✓ Nota reportada</div>}
 
-      {/* ================================================================== */}
-      {/* MODAL: COMPRAR NOTAS */}
-      {/* ================================================================== */}
-      
+      {/* MODAL: COMPRAR */}
       {showBuyModal && (
         <div style={styles.overlay} onClick={() => setShowBuyModal(false)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+          <div style={styles.modal} onClick={e => e.stopPropagation()}>
             <h2 style={styles.modalTitle}>Se acabaron tus notas 🔥</h2>
             <p style={styles.modalSubtitle}>Consigue más para seguir soltando:</p>
             
-            {/* Opción: Ver video */}
             {videosWatchedToday < MAX_VIDEOS_DIA && (
               <button onClick={watchVideoForNote} style={styles.buyOption}>
                 <span style={styles.buyOptionIcon}>🎬</span>
                 <div>
                   <strong>Ver un video</strong>
-                  <p style={styles.buyOptionDesc}>
-                    +1 nota gratis ({MAX_VIDEOS_DIA - videosWatchedToday} restantes hoy)
-                  </p>
+                  <p style={styles.buyOptionDesc}>+1 nota gratis ({MAX_VIDEOS_DIA - videosWatchedToday} restantes)</p>
                 </div>
               </button>
             )}
             
-            {/* Opción: Comprar 3 notas */}
             <button onClick={() => purchaseNotes('extra3')} style={styles.buyOption}>
               <span style={styles.buyOptionIcon}>🔥</span>
               <div>
@@ -1041,7 +1023,6 @@ export default function FireNotesApp() {
               </div>
             </button>
             
-            {/* Opción: Ilimitado hoy */}
             {!hasUnlimitedToday && (
               <button onClick={() => purchaseNotes('ilimitado')} style={styles.buyOption}>
                 <span style={styles.buyOptionIcon}>∞</span>
@@ -1052,68 +1033,47 @@ export default function FireNotesApp() {
               </button>
             )}
             
-            {/* Separador */}
-            <div style={styles.divider}>
-              <span>o paga con</span>
-            </div>
+            <div style={styles.divider}><span>o paga con</span></div>
             
-            {/* Opción: Crypto */}
             <button onClick={() => purchaseNotes('extra3')} style={{ ...styles.buyOption, borderColor: '#F7931A' }}>
               <span style={styles.buyOptionIcon}>₿</span>
               <div>
                 <strong>Bitcoin / Crypto</strong>
-                <p style={styles.buyOptionDesc}>+3 notas • Lightning Network</p>
+                <p style={styles.buyOptionDesc}>+3 notas · Lightning Network</p>
               </div>
             </button>
             
-            <button onClick={() => setShowBuyModal(false)} style={styles.ghostButton}>
-              Cerrar
-            </button>
+            <button onClick={() => setShowBuyModal(false)} style={styles.ghostButton}>Cerrar</button>
           </div>
         </div>
       )}
 
-      {/* ================================================================== */}
       {/* MODAL: REPORTAR */}
-      {/* ================================================================== */}
-      
       {showReportModal && (
         <div style={styles.overlay} onClick={() => setShowReportModal(null)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+          <div style={styles.modal} onClick={e => e.stopPropagation()}>
             <h2 style={styles.modalTitle}>⚑ Reportar nota</h2>
             <p style={styles.modalSubtitle}>¿Esta nota viola las reglas?</p>
-            
-            <button 
-              onClick={() => reportNote(showReportModal)} 
-              style={{ ...styles.primaryButton, background: '#E53935' }}
-            >
+            <button onClick={() => reportNote(showReportModal)} style={{ ...styles.primaryButton, background: '#E53935' }}>
               Sí, reportar
             </button>
-            
-            <button onClick={() => setShowReportModal(null)} style={styles.ghostButton}>
-              Cancelar
-            </button>
-            
+            <button onClick={() => setShowReportModal(null)} style={styles.ghostButton}>Cancelar</button>
             <p style={{ fontSize: 12, color: '#555', textAlign: 'center', marginTop: 12 }}>
-              Si muchas personas reportan una nota, se oculta automáticamente.
+              5+ reportes = eliminación automática
             </p>
           </div>
         </div>
       )}
 
-      {/* ================================================================== */}
-      {/* MODAL: INFORMACIÓN */}
-      {/* ================================================================== */}
-      
+      {/* MODAL: INFO */}
       {showInfoModal && (
         <div style={styles.overlay} onClick={() => setShowInfoModal(false)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+          <div style={styles.modal} onClick={e => e.stopPropagation()}>
             <h2 style={styles.modalTitle}>🔥 FIRE NOTES</h2>
             <p style={{ textAlign: 'center', color: '#888', fontStyle: 'italic', marginBottom: 16 }}>
               Pensamientos anónimos que flotan a 1km
             </p>
             
-            {/* Lo que SÍ puedes hacer */}
             <div style={styles.infoSection}>
               <h3 style={{ ...styles.infoTitle, color: '#4CAF50' }}>✅ Permitido</h3>
               <p style={styles.infoRule}>Decir lo que piensas sin filtro</p>
@@ -1122,7 +1082,6 @@ export default function FireNotesApp() {
               <p style={styles.infoRule}>Dar tu opinión honesta</p>
             </div>
             
-            {/* Lo que NO puedes hacer */}
             <div style={styles.infoSection}>
               <h3 style={{ ...styles.infoTitle, color: '#E53935' }}>❌ Prohibido</h3>
               <p style={styles.infoRule}>Amenazar a alguien con nombre</p>
@@ -1130,11 +1089,8 @@ export default function FireNotesApp() {
               <p style={styles.infoRule}>Acosar a personas identificables</p>
             </div>
             
-            {/* Advertencia importante */}
             <div style={styles.warningBox}>
-              <p style={{ fontWeight: 'bold', textAlign: 'center', color: '#FFD700' }}>
-                ⚠ IMPORTANTE
-              </p>
+              <p style={{ fontWeight: 'bold', textAlign: 'center', color: '#FFD700' }}>⚠ IMPORTANTE</p>
               <p style={{ textAlign: 'center', fontWeight: 'bold', color: '#FFF', marginTop: 8 }}>
                 Eres anónimo, pero NO invisible.
               </p>
@@ -1143,176 +1099,79 @@ export default function FireNotesApp() {
               </p>
             </div>
             
-            {/* Link a términos */}
-            <button 
-              onClick={() => { 
-                setShowInfoModal(false); 
-                setShowTermsModal(true); 
-              }} 
-              style={{ ...styles.linkButton, marginTop: 16 }}
-            >
+            <button onClick={() => { setShowInfoModal(false); setShowTermsModal(true); }} style={{ ...styles.linkButton, marginTop: 16 }}>
               Ver Términos y Privacidad
             </button>
             
-            <button onClick={() => setShowInfoModal(false)} style={{ ...styles.ghostButton, marginTop: 12 }}>
-              Cerrar
-            </button>
+            <button onClick={() => setShowInfoModal(false)} style={{ ...styles.ghostButton, marginTop: 12 }}>Cerrar</button>
           </div>
         </div>
       )}
 
-      {/* ================================================================== */}
-      {/* MODAL: TÉRMINOS (RESUMEN LEGAL) */}
-      {/* ================================================================== */}
-      
+      {/* MODAL: TÉRMINOS */}
       {showTermsModal && (
         <div style={styles.overlay} onClick={() => setShowTermsModal(false)}>
-          <div 
-            style={{ ...styles.modal, maxWidth: 420, maxHeight: '85vh', overflowY: 'auto' }} 
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div style={{ ...styles.modal, maxWidth: 420, maxHeight: '85vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             <h2 style={styles.modalTitle}>📜 Términos y Privacidad</h2>
             
             <div style={styles.legalContent}>
-              
-              <p style={styles.legalParagraph}>
-                Al usar FIRE NOTES aceptas estos términos. Si no estás de acuerdo, no uses la App.
-              </p>
+              <p>Al usar FIRE NOTES aceptas estos términos.</p>
               
               <h4 style={styles.legalHeading}>EDAD MÍNIMA</h4>
-              <p style={styles.legalParagraph}>
-                Debes tener al menos 13 años. Menores de 18 requieren permiso parental.
-              </p>
+              <p>Debes tener al menos 13 años.</p>
               
-              <h4 style={styles.legalHeading}>CONTENIDO PROHIBIDO</h4>
-              <p style={styles.legalParagraph}>
-                Amenazas identificables, contenido de menores, incitación a violencia, acoso, actividades ilegales.
-              </p>
+              <h4 style={styles.legalHeading}>PROHIBIDO</h4>
+              <p>Amenazas, contenido de menores, incitación a violencia, acoso identificable.</p>
               
               <h4 style={styles.legalHeading}>MODERACIÓN</h4>
-              <p style={styles.legalParagraph}>
-                5+ reportes = eliminación automática. Nos reservamos el derecho de eliminar contenido sin previo aviso.
-              </p>
+              <p>5+ reportes = eliminación. Contenido ilegal = eliminación inmediata.</p>
               
-              <h4 style={styles.legalHeading}>ANONIMATO Y LEY</h4>
-              <p style={styles.legalParagraph}>
-                <strong>Guardamos:</strong> ID de dispositivo, IP, ubicación aproximada.
-                <br /><br />
-                <strong>NO guardamos:</strong> Nombre, email, teléfono.
-                <br /><br />
-                Ante requerimientos legales, proporcionaremos información que permita identificar usuarios involucrados en actividades ilegales.
-              </p>
+              <h4 style={styles.legalHeading}>DATOS</h4>
+              <p><strong>Guardamos:</strong> ID dispositivo, IP, ubicación aproximada.</p>
+              <p><strong>NO guardamos:</strong> Nombre, email, teléfono.</p>
               
-              <h4 style={styles.legalHeading}>RESPONSABILIDAD</h4>
-              <p style={styles.legalParagraph}>
-                FIRE NOTES no es responsable por contenido de usuarios. La App es una plataforma neutral.
-              </p>
-              
-              <h4 style={styles.legalHeading}>JURISDICCIÓN</h4>
-              <p style={styles.legalParagraph}>
-                Estos términos se rigen por las leyes de México. Disputas serán resueltas en tribunales de Ciudad de México.
-              </p>
+              <h4 style={styles.legalHeading}>LEY</h4>
+              <p>Ante actividad ilegal, cooperamos con autoridades. Jurisdicción: México.</p>
               
               <div style={styles.legalFooter}>
                 <p>Términos completos: <strong>firenotesapp.com/legal</strong></p>
-                <p>Contacto: <strong>legal@firenotesapp.com</strong></p>
               </div>
-              
             </div>
             
-            <button onClick={() => setShowTermsModal(false)} style={{ ...styles.primaryButton, marginTop: 16 }}>
-              Entendido
-            </button>
+            <button onClick={() => setShowTermsModal(false)} style={{ ...styles.primaryButton, marginTop: 16 }}>Entendido</button>
           </div>
         </div>
       )}
 
-      {/* ================================================================== */}
       {/* MODAL: BIENVENIDA */}
-      {/* ================================================================== */}
-      
       {showWelcomeModal && (
         <div style={styles.overlay}>
           <div style={styles.modal}>
             <h2 style={styles.modalTitle}>¡Bienvenido a FIRE NOTES! 🔥</h2>
             
             <div style={{ padding: '16px 0' }}>
-              <p style={{ ...styles.infoRule, borderBottom: 'none', padding: '12px 0' }}>
-                📝 <strong>Escribe</strong> lo que piensas
-              </p>
-              <p style={{ ...styles.infoRule, borderBottom: 'none', padding: '12px 0' }}>
-                📍 <strong>Solo ven</strong> personas a 1km de ti
-              </p>
-              <p style={{ ...styles.infoRule, borderBottom: 'none', padding: '12px 0' }}>
-                ⏰ <strong>Desaparece</strong> en 24 horas
-              </p>
-              <p style={{ ...styles.infoRule, borderBottom: 'none', padding: '12px 0' }}>
-                🔥 <strong>Da fuego</strong> a lo que te gusta
-              </p>
-              <p style={{ ...styles.infoRule, borderBottom: 'none', padding: '12px 0' }}>
-                👤 <strong>100% anónimo</strong> - sin registro
-              </p>
+              <p style={{ ...styles.infoRule, borderBottom: 'none', padding: '12px 0' }}>📝 <strong>Escribe</strong> lo que piensas</p>
+              <p style={{ ...styles.infoRule, borderBottom: 'none', padding: '12px 0' }}>📍 <strong>Solo ven</strong> personas a 1km</p>
+              <p style={{ ...styles.infoRule, borderBottom: 'none', padding: '12px 0' }}>⏰ <strong>Desaparece</strong> en 24 horas</p>
+              <p style={{ ...styles.infoRule, borderBottom: 'none', padding: '12px 0' }}>🔥 <strong>Da fuego</strong> a lo que te gusta</p>
+              <p style={{ ...styles.infoRule, borderBottom: 'none', padding: '12px 0' }}>👤 <strong>100% anónimo</strong></p>
             </div>
             
-            <button onClick={() => setShowWelcomeModal(false)} style={styles.primaryButton}>
-              ¡Entendido!
-            </button>
+            <button onClick={() => setShowWelcomeModal(false)} style={styles.primaryButton}>¡Entendido!</button>
           </div>
         </div>
       )}
 
-      {/* ================================================================== */}
-      {/* ESTILOS CSS GLOBALES */}
-      {/* ================================================================== */}
-      
+      {/* CSS */}
       <style jsx global>{`
-        @keyframes spin { 
-          to { transform: rotate(360deg); } 
-        }
-        
-        @keyframes flicker { 
-          0%, 100% { opacity: 1; } 
-          50% { opacity: 0.7; } 
-        }
-        
-        @keyframes flyUp { 
-          to { 
-            transform: translateY(-60px) rotate(-3deg) scale(0.9); 
-            opacity: 0; 
-          } 
-        }
-        
-        @keyframes noteAppear { 
-          from { 
-            opacity: 0; 
-            transform: scale(0.95) translateY(10px); 
-          } 
-          to { 
-            opacity: 1; 
-            transform: scale(1) translateY(0); 
-          } 
-        }
-        
-        @keyframes fadeIn { 
-          from { 
-            opacity: 0; 
-            transform: translateX(-50%) translateY(-10px); 
-          } 
-          to { 
-            opacity: 1; 
-            transform: translateX(-50%) translateY(0); 
-          } 
-        }
-        
-        * { 
-          box-sizing: border-box; 
-          margin: 0; 
-          padding: 0; 
-        }
-        
-        body { 
-          background: #000; 
-        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes flicker { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.8; transform: scale(1.1); } }
+        @keyframes flyUp { to { transform: translateY(-60px) rotate(-3deg) scale(0.9); opacity: 0; } }
+        @keyframes noteAppear { from { opacity: 0; transform: scale(0.95) translateY(15px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(-10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+        @keyframes glow { 0%, 100% { box-shadow: 0 0 20px rgba(255,107,53,0.3); } 50% { box-shadow: 0 0 30px rgba(255,107,53,0.5); } }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: #000; }
       `}</style>
       
     </div>
@@ -1324,10 +1183,6 @@ export default function FireNotesApp() {
 // ============================================================================
 
 const styles = {
-  // --------------------------------------------------------------------------
-  // Contenedor principal
-  // --------------------------------------------------------------------------
-  
   container: { 
     minHeight: '100dvh', 
     backgroundColor: '#000', 
@@ -1347,10 +1202,6 @@ const styles = {
     padding: 24, 
     textAlign: 'center' 
   },
-  
-  // --------------------------------------------------------------------------
-  // Header
-  // --------------------------------------------------------------------------
   
   header: { 
     display: 'flex', 
@@ -1378,11 +1229,7 @@ const styles = {
     justifyContent: 'center' 
   },
   
-  logoContainer: { 
-    display: 'flex', 
-    alignItems: 'center', 
-    gap: 8 
-  },
+  logoContainer: { display: 'flex', alignItems: 'center', gap: 8 },
   
   logoText: { 
     fontSize: 24, 
@@ -1393,51 +1240,15 @@ const styles = {
     letterSpacing: 2 
   },
   
-  logoSubtext: { 
-    fontSize: 14, 
-    fontWeight: 'normal', 
-    color: '#FFF', 
-    letterSpacing: 1, 
-    opacity: 0.9 
-  },
+  logoSubtext: { fontSize: 14, fontWeight: 'normal', color: '#FFF', letterSpacing: 1, opacity: 0.9 },
   
-  notesCounter: { 
-    display: 'flex', 
-    alignItems: 'center', 
-    gap: 2, 
-    minWidth: 70, 
-    justifyContent: 'flex-end' 
-  },
+  notesCounter: { display: 'flex', alignItems: 'center', gap: 2, minWidth: 70, justifyContent: 'flex-end' },
   
-  // --------------------------------------------------------------------------
-  // Tabs
-  // --------------------------------------------------------------------------
+  tabsContainer: { display: 'flex', borderBottom: '1px solid #1a1a1a' },
   
-  tabsContainer: { 
-    display: 'flex', 
-    borderBottom: '1px solid #1a1a1a' 
-  },
+  tab: { flex: 1, padding: 12, background: 'transparent', border: 'none', color: '#666', fontSize: 14, cursor: 'pointer', transition: '0.2s' },
   
-  tab: { 
-    flex: 1, 
-    padding: 12, 
-    background: 'transparent', 
-    border: 'none', 
-    color: '#666', 
-    fontSize: 14, 
-    cursor: 'pointer', 
-    transition: '0.2s' 
-  },
-  
-  tabActive: { 
-    color: '#FF6B35', 
-    borderBottom: '2px solid #FF6B35', 
-    marginBottom: -1 
-  },
-  
-  // --------------------------------------------------------------------------
-  // Indicador de zona
-  // --------------------------------------------------------------------------
+  tabActive: { color: '#FF6B35', borderBottom: '2px solid #FF6B35', marginBottom: -1 },
   
   zoneIndicator: { 
     textAlign: 'center', 
@@ -1449,59 +1260,62 @@ const styles = {
     borderBottom: '1px solid #1a1a1a' 
   },
   
-  // --------------------------------------------------------------------------
-  // Feed de notas
-  // --------------------------------------------------------------------------
+  feedContainer: { padding: 16, paddingBottom: 100, minHeight: 'calc(100dvh - 140px)' },
   
-  feedContainer: { 
-    padding: 16, 
-    paddingBottom: 100, 
-    minHeight: 'calc(100dvh - 140px)' 
-  },
-  
-  notesGrid: { 
-    display: 'flex', 
-    flexDirection: 'column', 
-    gap: 16 
-  },
-  
-  // --------------------------------------------------------------------------
-  // Tarjeta de nota
-  // --------------------------------------------------------------------------
+  notesGrid: { display: 'flex', flexDirection: 'column', gap: 18 },
   
   noteCard: { 
     position: 'relative', 
     backgroundColor: '#F5E6D3', 
-    borderRadius: 4, 
-    padding: 20, 
+    borderRadius: 6, 
+    padding: '22px 20px 18px', 
     overflow: 'hidden', 
-    transition: '0.3s' 
+    transition: 'all 0.3s ease' 
+  },
+  
+  hotGlow: {
+    position: 'absolute',
+    top: -2,
+    left: -2,
+    right: -2,
+    bottom: -2,
+    background: 'linear-gradient(45deg, rgba(255,107,53,0.3), rgba(230,57,70,0.3), rgba(255,107,53,0.3))',
+    borderRadius: 8,
+    zIndex: -1,
+    animation: 'glow 2s ease-in-out infinite',
+  },
+  
+  hotBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    background: 'linear-gradient(135deg, #FF6B35, #E63946)',
+    color: '#FFF',
+    padding: '3px 8px',
+    borderRadius: 10,
+    fontSize: 10,
+    fontWeight: 'bold',
+    letterSpacing: 1,
   },
   
   noteLines: { 
     position: 'absolute', 
-    top: 0, 
-    left: 0, 
-    right: 0, 
-    bottom: 0, 
+    top: 0, left: 0, right: 0, bottom: 0, 
     background: 'repeating-linear-gradient(0deg, transparent, transparent 28px, rgba(0,0,0,0.03) 28px, rgba(0,0,0,0.03) 29px)', 
     pointerEvents: 'none' 
   },
   
   burnEffect: { 
     position: 'absolute', 
-    top: 0, 
-    left: 0, 
-    right: 0, 
-    bottom: 0, 
+    top: 0, left: 0, right: 0, bottom: 0, 
     background: 'linear-gradient(135deg, transparent 85%, rgba(139,69,19,0.2) 100%)', 
-    borderRadius: 4, 
+    borderRadius: 6, 
     pointerEvents: 'none' 
   },
   
   noteText: { 
     color: '#2D2A26', 
-    fontSize: 16, 
+    fontSize: 17, 
     fontStyle: 'italic', 
     lineHeight: 1.6, 
     position: 'relative', 
@@ -1514,15 +1328,12 @@ const styles = {
     display: 'flex', 
     justifyContent: 'space-between', 
     alignItems: 'center', 
-    marginTop: 12, 
+    marginTop: 14, 
     position: 'relative', 
     zIndex: 1 
   },
   
-  noteTime: { 
-    fontSize: 12, 
-    color: '#8B7355' 
-  },
+  noteTime: { fontSize: 12, color: '#8B7355' },
   
   reportButton: { 
     background: 'transparent', 
@@ -1539,30 +1350,20 @@ const styles = {
     border: 'none', 
     fontSize: 16, 
     cursor: 'pointer', 
-    padding: '6px 10px', 
-    borderRadius: 12, 
+    padding: '6px 12px', 
+    borderRadius: 14, 
     color: '#2D2A26', 
-    transition: '0.2s', 
+    transition: 'all 0.2s ease', 
     display: 'flex', 
     alignItems: 'center' 
   },
   
-  // --------------------------------------------------------------------------
-  // Pantalla de escribir
-  // --------------------------------------------------------------------------
-  
-  writeContainer: { 
-    padding: '24px 20px', 
-    display: 'flex', 
-    flexDirection: 'column', 
-    gap: 20, 
-    minHeight: 'calc(100dvh - 70px)' 
-  },
+  writeContainer: { padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: 16 },
   
   writePaper: { 
     position: 'relative', 
     backgroundColor: '#F5E6D3', 
-    borderRadius: 4, 
+    borderRadius: 6, 
     padding: 24, 
     minHeight: 200, 
     boxShadow: '2px 4px 12px rgba(0,0,0,0.4)' 
@@ -1584,19 +1385,16 @@ const styles = {
     zIndex: 1 
   },
   
-  charCounter: { 
-    position: 'absolute', 
-    bottom: 8, 
-    right: 12, 
-    fontSize: 12, 
-    color: '#8B7355', 
-    fontFamily: 'monospace', 
-    zIndex: 1 
-  },
+  charCounter: { position: 'absolute', bottom: 8, right: 12, fontSize: 12, fontFamily: 'monospace', zIndex: 1 },
   
-  // --------------------------------------------------------------------------
-  // Botones
-  // --------------------------------------------------------------------------
+  cooldownIndicator: {
+    textAlign: 'center',
+    padding: '10px',
+    backgroundColor: 'rgba(255,107,53,0.1)',
+    borderRadius: 8,
+    color: '#FF6B35',
+    fontSize: 14,
+  },
   
   primaryButton: { 
     width: '100%', 
@@ -1636,10 +1434,6 @@ const styles = {
     width: '100%' 
   },
   
-  // --------------------------------------------------------------------------
-  // FAB (Botón flotante)
-  // --------------------------------------------------------------------------
-  
   fab: { 
     position: 'fixed', 
     bottom: 24, 
@@ -1658,10 +1452,6 @@ const styles = {
     zIndex: 99 
   },
   
-  // --------------------------------------------------------------------------
-  // Toast
-  // --------------------------------------------------------------------------
-  
   toast: { 
     position: 'fixed', 
     top: 80, 
@@ -1677,16 +1467,9 @@ const styles = {
     animation: 'fadeIn 0.3s ease' 
   },
   
-  // --------------------------------------------------------------------------
-  // Modal / Overlay
-  // --------------------------------------------------------------------------
-  
   overlay: { 
     position: 'fixed', 
-    top: 0, 
-    left: 0, 
-    right: 0, 
-    bottom: 0, 
+    top: 0, left: 0, right: 0, bottom: 0, 
     backgroundColor: 'rgba(0,0,0,0.85)', 
     display: 'flex', 
     alignItems: 'center', 
@@ -1704,25 +1487,9 @@ const styles = {
     border: '1px solid #222' 
   },
   
-  modalTitle: { 
-    fontSize: 22, 
-    fontWeight: 'bold', 
-    textAlign: 'center', 
-    color: '#FFD700', 
-    margin: '0 0 8px 0' 
-  },
+  modalTitle: { fontSize: 22, fontWeight: 'bold', textAlign: 'center', color: '#FFD700', margin: '0 0 8px 0' },
   
-  modalSubtitle: { 
-    fontSize: 14, 
-    color: '#888', 
-    textAlign: 'center', 
-    marginBottom: 20, 
-    fontStyle: 'italic' 
-  },
-  
-  // --------------------------------------------------------------------------
-  // Opciones de compra
-  // --------------------------------------------------------------------------
+  modalSubtitle: { fontSize: 14, color: '#888', textAlign: 'center', marginBottom: 20, fontStyle: 'italic' },
   
   buyOption: { 
     width: '100%', 
@@ -1739,100 +1506,25 @@ const styles = {
     color: '#FFF' 
   },
   
-  buyOptionIcon: { 
-    fontSize: 28, 
-    flexShrink: 0 
-  },
+  buyOptionIcon: { fontSize: 28, flexShrink: 0 },
   
-  buyOptionDesc: { 
-    fontSize: 13, 
-    color: '#888', 
-    margin: '4px 0 0 0' 
-  },
+  buyOptionDesc: { fontSize: 13, color: '#888', margin: '4px 0 0 0' },
   
-  divider: { 
-    display: 'flex', 
-    alignItems: 'center', 
-    gap: 12, 
-    margin: '16px 0', 
-    color: '#555', 
-    fontSize: 12,
-    justifyContent: 'center'
-  },
+  divider: { display: 'flex', alignItems: 'center', gap: 12, margin: '16px 0', color: '#555', fontSize: 12, justifyContent: 'center' },
   
-  // --------------------------------------------------------------------------
-  // Sección de información
-  // --------------------------------------------------------------------------
+  infoSection: { marginTop: 16 },
   
-  infoSection: { 
-    marginTop: 16 
-  },
+  infoTitle: { fontSize: 14, fontWeight: 'bold', marginBottom: 8 },
   
-  infoTitle: { 
-    fontSize: 14, 
-    fontWeight: 'bold', 
-    marginBottom: 8 
-  },
+  infoRule: { color: '#CCC', fontSize: 14, margin: 0, padding: '6px 0', borderBottom: '1px solid #1a1a1a' },
   
-  infoRule: { 
-    color: '#CCC', 
-    fontSize: 14, 
-    margin: 0, 
-    padding: '6px 0', 
-    borderBottom: '1px solid #1a1a1a' 
-  },
+  warningBox: { marginTop: 16, padding: 16, borderRadius: 8, border: '2px solid #FFD700', backgroundColor: 'rgba(255,215,0,0.05)' },
   
-  warningBox: { 
-    marginTop: 16, 
-    padding: 16, 
-    borderRadius: 8, 
-    border: '2px solid #FFD700', 
-    backgroundColor: 'rgba(255,215,0,0.05)' 
-  },
+  legalContent: { marginTop: 16, fontSize: 13, color: '#AAA', lineHeight: 1.7 },
   
-  // --------------------------------------------------------------------------
-  // Contenido legal
-  // --------------------------------------------------------------------------
+  legalHeading: { fontSize: 14, color: '#FFD700', fontWeight: 'bold', marginBottom: 6, marginTop: 16 },
   
-  legalContent: { 
-    marginTop: 16, 
-    fontSize: 13, 
-    color: '#AAA', 
-    lineHeight: 1.7 
-  },
+  legalFooter: { marginTop: 20, padding: 12, backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 8, textAlign: 'center', fontSize: 12, color: '#888' },
   
-  legalHeading: { 
-    fontSize: 14, 
-    color: '#FFD700', 
-    fontWeight: 'bold', 
-    marginBottom: 6, 
-    marginTop: 16 
-  },
-  
-  legalParagraph: {
-    marginBottom: 8
-  },
-  
-  legalFooter: {
-    marginTop: 20,
-    padding: 12,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderRadius: 8,
-    textAlign: 'center',
-    fontSize: 12,
-    color: '#888'
-  },
-  
-  // --------------------------------------------------------------------------
-  // Spinner
-  // --------------------------------------------------------------------------
-  
-  spinner: { 
-    width: 32, 
-    height: 32, 
-    border: '3px solid #222', 
-    borderTop: '3px solid #FF6B35', 
-    borderRadius: '50%', 
-    animation: 'spin 1s linear infinite' 
-  },
+  spinner: { width: 32, height: 32, border: '3px solid #222', borderTop: '3px solid #FF6B35', borderRadius: '50%', animation: 'spin 1s linear infinite' },
 };
