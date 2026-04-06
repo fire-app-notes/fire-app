@@ -364,7 +364,7 @@ export default function FireNotesApp() {
     setAnimatingNotes(prev => new Set([...prev, noteId]));
     setTimeout(() => setAnimatingNotes(prev => { const n = new Set(prev); n.delete(noteId); return n; }), 600);
     
-    // Actualizar UI inmediatamente
+    // Actualizar UI inmediatamente (optimista)
     const newReactions = new Set(myReactions);
     if (liked) {
       newReactions.delete(noteId);
@@ -380,21 +380,37 @@ export default function FireNotesApp() {
     setNotes(updateFires);
     setMyNotes(updateFires);
     
-    // Sincronizar con servidor (sin revertir si falla)
+    // Sincronizar con servidor
     try {
+      console.log('Enviando toggle_fire:', { noteId, deviceId, liked });
+      
       const { data, error } = await supabase.rpc('toggle_fire', { 
         p_pensamiento_id: noteId, 
         p_device_id: deviceId 
       });
       
-      // Solo actualizar si el servidor devuelve un valor válido Y es diferente
-      if (!error && data && typeof data.fires === 'number') {
+      console.log('Respuesta toggle_fire:', { data, error });
+      
+      if (error) {
+        console.error('Error en toggle_fire:', error);
+        // Revertir si hay error
+        setMyReactions(myReactions);
+        const revertFires = prev => prev.map(n => 
+          n.id === noteId ? { ...n, fires: Math.max(0, n.fires + (liked ? 1 : -1)) } : n
+        );
+        setNotes(revertFires);
+        setMyNotes(revertFires);
+        return;
+      }
+      
+      // Actualizar con valor real del servidor
+      if (data && typeof data.fires === 'number') {
+        console.log('Actualizando fires a:', data.fires);
         setNotes(prev => prev.map(n => n.id === noteId ? { ...n, fires: data.fires } : n));
         setMyNotes(prev => prev.map(n => n.id === noteId ? { ...n, fires: data.fires } : n));
       }
     } catch (e) {
-      // Si falla, mantenemos el cambio local (no revertimos)
-      console.log('Error sincronizando fire, manteniendo estado local');
+      console.error('Error de conexión en toggle_fire:', e);
     }
   }
 
