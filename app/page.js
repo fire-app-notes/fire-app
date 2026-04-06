@@ -128,6 +128,22 @@ function timeAgo(d) {
   return h < 24 ? `${h}h` : '1d';
 }
 
+// Calcula qué tan "quemada" está la nota (0 a 1) basado en tiempo
+function getBurnLevel(createdAt) {
+  const hoursElapsed = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60);
+  if (hoursElapsed < 12) return 0;      // Fresca
+  if (hoursElapsed < 17) return 0.3;    // Empezando a quemar
+  if (hoursElapsed < 20) return 0.6;    // Quemándose
+  if (hoursElapsed < 23) return 0.85;   // Casi cenizas
+  return 1;                              // Por desaparecer
+}
+
+// Obtiene las horas restantes antes de que expire
+function getHoursRemaining(createdAt) {
+  const hoursElapsed = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60);
+  return Math.max(0, Math.ceil(24 - hoursElapsed));
+}
+
 function isValidNoteText(t) {
   return /^[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ0-9\s.,;:!?¡¿'"()\-@#%&]+$/i.test(t) && t.trim().length > 0 && t.length <= MAX_CARACTERES;
 }
@@ -450,7 +466,9 @@ export default function FireNotesApp() {
       
       {/* ========== HEADER ========== */}
       <header style={styles.header}>
-        <button onClick={() => setShowInfoModal(true)} style={styles.infoBtn}>?</button>
+        <button onClick={() => setShowInfoModal(true)} style={styles.infoBtn}>
+          <span style={{ fontSize: 14 }}>ℹ️</span>
+        </button>
         
         <div style={styles.logo}>
           <span style={styles.logoIcon}>🔥</span>
@@ -518,6 +536,11 @@ export default function FireNotesApp() {
                 const intensity = getFireIntensity(fires);
                 const isLiked = myReactions.has(note.id);
                 const isAnimatingFire = animatingNotes.has(note.id);
+                const burnLevel = getBurnLevel(note.created_at);
+                const hoursLeft = getHoursRemaining(note.created_at);
+                const isLegendary = fires >= 50;
+                const isPopular = fires >= 25 && fires < 50;
+                const isBurning = burnLevel > 0.5;
                 
                 return (
                   <div
@@ -526,12 +549,26 @@ export default function FireNotesApp() {
                       ...styles.noteCard,
                       background: getFireGradient(fires),
                       boxShadow: getGlowStyle(fires),
-                      borderColor: intensity >= 3 ? 'rgba(255,107,53,0.4)' : 'rgba(180,150,120,0.3)',
+                      borderColor: isBurning ? 'rgba(139,69,19,0.5)' : intensity >= 3 ? 'rgba(255,107,53,0.4)' : 'rgba(180,150,120,0.3)',
                       animation: `noteSlide 0.4s ease ${idx * 0.05}s both`,
+                      opacity: 1 - (burnLevel * 0.25),
+                      transform: isBurning ? `rotate(${(Math.random() - 0.5) * 2}deg)` : 'none',
                     }}
                   >
                     {/* Partículas de fuego para notas HOT */}
                     {intensity >= 4 && <FireParticles intensity={intensity} />}
+                    
+                    {/* Efecto de quemado en bordes */}
+                    {isBurning && (
+                      <div style={{
+                        position: 'absolute',
+                        top: 0, left: 0, right: 0, bottom: 0,
+                        background: `radial-gradient(ellipse at ${burnLevel > 0.7 ? '100% 100%' : '100% 0%'}, rgba(139,69,19,${burnLevel * 0.4}) 0%, transparent 50%)`,
+                        borderRadius: 16,
+                        pointerEvents: 'none',
+                        zIndex: 3,
+                      }} />
+                    )}
                     
                     {/* Líneas de papel */}
                     <div style={{
@@ -542,17 +579,49 @@ export default function FireNotesApp() {
                       borderRadius: 16,
                     }} />
                     
+                    {/* Badge LEGENDARIA */}
+                    {isLegendary && (
+                      <div style={{ ...styles.hotBadge, background: 'linear-gradient(135deg, #FFD700, #FFA500)', color: '#000' }}>
+                        👑 LEGENDARIA
+                      </div>
+                    )}
+                    
+                    {/* Badge POPULAR */}
+                    {isPopular && !isLegendary && (
+                      <div style={{ ...styles.hotBadge, background: 'linear-gradient(135deg, #9C27B0, #E91E63)' }}>
+                        ⭐ POPULAR
+                      </div>
+                    )}
+                    
                     {/* Badge HOT */}
-                    {intensity >= 4 && (
+                    {intensity >= 4 && !isPopular && !isLegendary && (
                       <div style={styles.hotBadge}>
                         {intensity >= 5 ? '🔥 INFERNO' : '🔥 HOT'}
+                      </div>
+                    )}
+                    
+                    {/* Badge de tiempo restante */}
+                    {isBurning && hoursLeft <= 6 && (
+                      <div style={{
+                        position: 'absolute',
+                        bottom: 10,
+                        left: 10,
+                        background: 'rgba(139,69,19,0.8)',
+                        padding: '3px 8px',
+                        borderRadius: 10,
+                        fontSize: 10,
+                        color: '#FFF',
+                        fontWeight: 600,
+                        zIndex: 2,
+                      }}>
+                        ⏳ {hoursLeft}h restantes
                       </div>
                     )}
                     
                     {/* Texto de la nota */}
                     <p style={{
                       ...styles.noteText,
-                      color: '#2D2016',
+                      color: isBurning ? '#4A3728' : '#2D2016',
                       textShadow: intensity >= 3 ? '0 1px 2px rgba(255,255,255,0.3)' : 'none',
                     }}>
                       {note.texto}
@@ -578,15 +647,15 @@ export default function FireNotesApp() {
                           }}
                         >
                           <span style={{ 
-                            fontSize: intensity >= 4 ? 22 : 18,
+                            fontSize: isLegendary ? 24 : intensity >= 4 ? 22 : 18,
                             filter: isLiked ? 'drop-shadow(0 0 8px rgba(255,107,53,0.8))' : 'none',
-                            animation: isAnimatingFire ? 'firePulse 0.6s ease' : intensity >= 4 ? 'fireFlicker 0.8s ease-in-out infinite' : 'none',
-                          }}>🔥</span>
+                            animation: isAnimatingFire ? 'firePulse 0.6s ease' : isLegendary ? 'fireFlicker 0.5s ease-in-out infinite' : intensity >= 4 ? 'fireFlicker 0.8s ease-in-out infinite' : 'none',
+                          }}>{isLegendary ? '👑' : '🔥'}</span>
                           <span style={{ 
                             marginLeft: 6, 
                             fontWeight: 700, 
                             fontSize: 15,
-                            color: intensity >= 3 ? '#D84315' : '#5D4E37',
+                            color: isLegendary ? '#B8860B' : intensity >= 3 ? '#D84315' : '#5D4E37',
                           }}>{fires}</span>
                         </button>
                       </div>
@@ -834,7 +903,7 @@ const styles = {
   
   header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', background: 'linear-gradient(180deg, #0a0a0a 0%, #050505 100%)', position: 'sticky', top: 0, zIndex: 100, borderBottom: '1px solid #151515' },
   
-  infoBtn: { width: 36, height: 36, borderRadius: '50%', border: '1px solid #252525', background: 'transparent', color: '#666', fontSize: 16, cursor: 'pointer' },
+  infoBtn: { width: 36, height: 36, borderRadius: '50%', border: '1px solid #333', background: 'rgba(255,107,53,0.1)', color: '#FF8C42', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' },
   
   logo: { display: 'flex', alignItems: 'center', gap: 6 },
   logoIcon: { fontSize: 28, filter: 'drop-shadow(0 0 10px rgba(255,107,53,0.5))' },
