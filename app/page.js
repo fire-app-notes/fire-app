@@ -404,19 +404,20 @@ export default function FireNotesApp() {
 
   function getFireGradient(fires) {
     const i = getFireIntensity(fires);
-    if (i >= 4) return 'linear-gradient(145deg, #1a0a00 0%, #2d1106 50%, #1a0800 100%)';
-    if (i >= 3) return 'linear-gradient(145deg, #140800 0%, #1f0d04 50%, #140600 100%)';
-    if (i >= 2) return 'linear-gradient(145deg, #0f0603 0%, #170a05 50%, #0f0502 100%)';
-    return 'linear-gradient(145deg, #0a0606 0%, #121010 50%, #0a0606 100%)';
+    // Notas claras tipo papel que brillan más con más fuegos
+    if (i >= 4) return 'linear-gradient(145deg, #FFF8E7 0%, #FFE4B5 50%, #FFD89B 100%)';
+    if (i >= 3) return 'linear-gradient(145deg, #FFF8E7 0%, #FFECD2 50%, #FFE4B5 100%)';
+    if (i >= 2) return 'linear-gradient(145deg, #FFFBF5 0%, #FFF5E6 50%, #FFECD2 100%)';
+    return 'linear-gradient(145deg, #FFFDF9 0%, #FFF8F0 50%, #FFF5E6 100%)';
   }
 
   function getGlowStyle(fires) {
     const i = getFireIntensity(fires);
-    if (i >= 5) return '0 0 40px rgba(255,107,53,0.5), 0 0 80px rgba(255,60,0,0.3), inset 0 0 30px rgba(255,107,53,0.1)';
-    if (i >= 4) return '0 0 30px rgba(255,107,53,0.4), 0 0 60px rgba(255,60,0,0.2)';
-    if (i >= 3) return '0 0 20px rgba(255,107,53,0.25), 0 0 40px rgba(255,60,0,0.1)';
-    if (i >= 2) return '0 0 15px rgba(255,107,53,0.15)';
-    return '0 4px 20px rgba(0,0,0,0.5)';
+    if (i >= 5) return '0 8px 40px rgba(255,107,53,0.6), 0 0 60px rgba(255,60,0,0.4), 0 0 100px rgba(255,107,53,0.2)';
+    if (i >= 4) return '0 6px 30px rgba(255,107,53,0.5), 0 0 50px rgba(255,60,0,0.3)';
+    if (i >= 3) return '0 4px 25px rgba(255,140,66,0.4), 0 0 35px rgba(255,107,53,0.2)';
+    if (i >= 2) return '0 4px 20px rgba(255,180,100,0.3)';
+    return '0 4px 16px rgba(0,0,0,0.4), 0 2px 8px rgba(255,200,150,0.1)';
   }
 
   // ============================================================================
@@ -454,22 +455,20 @@ export default function FireNotesApp() {
         <div style={styles.logo}>
           <span style={styles.logoIcon}>🔥</span>
           <span style={styles.logoText}>FIRE</span>
+          <span style={styles.logoNotes}>NOTES</span>
         </div>
         
         <div style={styles.notesIndicator}>
           {hasUnlimitedToday ? (
             <span style={{ color: '#FFD700', fontSize: 22, fontWeight: 800 }}>∞</span>
           ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
               {[...Array(3)].map((_, i) => (
-                <div key={i} style={{
-                  width: 8, height: 8, borderRadius: '50%',
-                  background: i < remaining ? 'linear-gradient(135deg, #FF6B35, #FF8C42)' : '#333',
-                  boxShadow: i < remaining ? '0 0 8px rgba(255,107,53,0.6)' : 'none',
-                  transition: 'all 0.3s ease'
-                }} />
+                <span key={i} style={{ fontSize: 18, opacity: i < remaining ? 1 : 0.25, transition: 'all 0.3s' }}>
+                  📝
+                </span>
               ))}
-              {remaining > 3 && <span style={{ color: '#FF6B35', fontSize: 12, marginLeft: 4, fontWeight: 700 }}>+{remaining - 3}</span>}
+              {remaining > 3 && <span style={{ color: '#FFD700', fontSize: 13, marginLeft: 4, fontWeight: 700 }}>+{remaining - 3}</span>}
             </div>
           )}
         </div>
@@ -527,12 +526,21 @@ export default function FireNotesApp() {
                       ...styles.noteCard,
                       background: getFireGradient(fires),
                       boxShadow: getGlowStyle(fires),
-                      borderColor: intensity >= 3 ? `rgba(255,107,53,${0.1 + intensity * 0.1})` : 'rgba(255,255,255,0.03)',
+                      borderColor: intensity >= 3 ? 'rgba(255,107,53,0.4)' : 'rgba(180,150,120,0.3)',
                       animation: `noteSlide 0.4s ease ${idx * 0.05}s both`,
                     }}
                   >
                     {/* Partículas de fuego para notas HOT */}
                     {intensity >= 4 && <FireParticles intensity={intensity} />}
+                    
+                    {/* Líneas de papel */}
+                    <div style={{
+                      position: 'absolute',
+                      top: 0, left: 0, right: 0, bottom: 0,
+                      background: 'repeating-linear-gradient(transparent, transparent 27px, rgba(200,180,150,0.3) 27px, rgba(200,180,150,0.3) 28px)',
+                      pointerEvents: 'none',
+                      borderRadius: 16,
+                    }} />
                     
                     {/* Badge HOT */}
                     {intensity >= 4 && (
@@ -544,7 +552,8 @@ export default function FireNotesApp() {
                     {/* Texto de la nota */}
                     <p style={{
                       ...styles.noteText,
-                      textShadow: intensity >= 3 ? '0 0 20px rgba(255,107,53,0.3)' : 'none',
+                      color: '#2D2016',
+                      textShadow: intensity >= 3 ? '0 1px 2px rgba(255,255,255,0.3)' : 'none',
                     }}>
                       {note.texto}
                     </p>
@@ -563,9 +572,9 @@ export default function FireNotesApp() {
                           onClick={() => toggleFire(note.id)}
                           style={{
                             ...styles.fireBtn,
-                            background: isLiked ? 'rgba(255,107,53,0.2)' : 'rgba(255,255,255,0.05)',
+                            background: isLiked ? 'rgba(255,107,53,0.25)' : 'rgba(0,0,0,0.05)',
                             transform: isAnimatingFire ? 'scale(1.3)' : isLiked ? 'scale(1.1)' : 'scale(1)',
-                            boxShadow: isLiked ? '0 0 20px rgba(255,107,53,0.4)' : 'none',
+                            boxShadow: isLiked ? '0 0 15px rgba(255,107,53,0.4)' : 'none',
                           }}
                         >
                           <span style={{ 
@@ -577,7 +586,7 @@ export default function FireNotesApp() {
                             marginLeft: 6, 
                             fontWeight: 700, 
                             fontSize: 15,
-                            color: intensity >= 3 ? '#FF8C42' : '#AAA',
+                            color: intensity >= 3 ? '#D84315' : '#5D4E37',
                           }}>{fires}</span>
                         </button>
                       </div>
@@ -791,6 +800,7 @@ export default function FireNotesApp() {
 
       {/* ========== ESTILOS GLOBALES ========== */}
       <style jsx global>{`
+        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: #050505; }
         
@@ -818,7 +828,7 @@ export default function FireNotesApp() {
 // ============================================================================
 
 const styles = {
-  container: { minHeight: '100dvh', background: '#050505', color: '#FFF', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', maxWidth: 480, margin: '0 auto' },
+  container: { minHeight: '100dvh', background: '#0a0a0a', color: '#FFF', fontFamily: '"Nunito", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', maxWidth: 480, margin: '0 auto' },
   
   centerContent: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', padding: 24 },
   
@@ -826,9 +836,10 @@ const styles = {
   
   infoBtn: { width: 36, height: 36, borderRadius: '50%', border: '1px solid #252525', background: 'transparent', color: '#666', fontSize: 16, cursor: 'pointer' },
   
-  logo: { display: 'flex', alignItems: 'center', gap: 8 },
+  logo: { display: 'flex', alignItems: 'center', gap: 6 },
   logoIcon: { fontSize: 28, filter: 'drop-shadow(0 0 10px rgba(255,107,53,0.5))' },
-  logoText: { fontSize: 26, fontWeight: 800, background: 'linear-gradient(135deg, #FF6B35 0%, #FF8C42 50%, #FFB347 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: 2 },
+  logoText: { fontSize: 24, fontWeight: 800, background: 'linear-gradient(135deg, #FF6B35 0%, #FF8C42 50%, #FFB347 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: 1 },
+  logoNotes: { fontSize: 14, fontWeight: 600, color: '#FFF', letterSpacing: 2, marginLeft: 2 },
   
   notesIndicator: { minWidth: 60, display: 'flex', justifyContent: 'flex-end' },
   
@@ -845,15 +856,15 @@ const styles = {
   
   noteCard: { position: 'relative', borderRadius: 16, padding: '20px', border: '1px solid', transition: 'all 0.3s ease', overflow: 'hidden' },
   
-  hotBadge: { position: 'absolute', top: 12, right: 12, background: 'linear-gradient(135deg, #FF6B35, #E63946)', padding: '4px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', boxShadow: '0 0 15px rgba(255,107,53,0.5)' },
+  hotBadge: { position: 'absolute', top: 10, right: 10, background: 'linear-gradient(135deg, #FF6B35, #E63946)', padding: '4px 10px', borderRadius: 20, fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', boxShadow: '0 2px 10px rgba(255,107,53,0.5)', color: '#FFF', zIndex: 2 },
   
-  noteText: { color: '#EEE', fontSize: 16, lineHeight: 1.6, margin: 0, wordBreak: 'break-word', position: 'relative', zIndex: 1 },
+  noteText: { color: '#2D2016', fontSize: 16, lineHeight: 1.6, margin: 0, wordBreak: 'break-word', position: 'relative', zIndex: 1, fontFamily: '"Nunito", "Comic Neue", -apple-system, sans-serif' },
   
   noteFooter: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, position: 'relative', zIndex: 1 },
   
-  noteMeta: { fontSize: 12, color: '#555' },
+  noteMeta: { fontSize: 12, color: '#8B7355' },
   
-  reportBtn: { background: 'transparent', border: 'none', fontSize: 14, color: '#444', cursor: 'pointer', padding: 4, opacity: 0.5 },
+  reportBtn: { background: 'transparent', border: 'none', fontSize: 14, color: '#A08060', cursor: 'pointer', padding: 4, opacity: 0.5 },
   
   fireBtn: { display: 'flex', alignItems: 'center', padding: '8px 14px', borderRadius: 20, border: 'none', cursor: 'pointer', transition: 'all 0.2s ease' },
   
