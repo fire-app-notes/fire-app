@@ -364,17 +364,38 @@ export default function FireNotesApp() {
     setAnimatingNotes(prev => new Set([...prev, noteId]));
     setTimeout(() => setAnimatingNotes(prev => { const n = new Set(prev); n.delete(noteId); return n; }), 600);
     
-    setMyReactions(prev => { const n = new Set(prev); liked ? n.delete(noteId) : n.add(noteId); return n; });
-    const upd = prev => prev.map(n => n.id === noteId ? { ...n, fires: n.fires + (liked ? -1 : 1) } : n);
-    setNotes(upd); setMyNotes(upd);
+    // Actualizar UI inmediatamente
+    const newReactions = new Set(myReactions);
+    if (liked) {
+      newReactions.delete(noteId);
+    } else {
+      newReactions.add(noteId);
+    }
+    setMyReactions(newReactions);
     
+    // Actualizar contadores localmente
+    const updateFires = prev => prev.map(n => 
+      n.id === noteId ? { ...n, fires: Math.max(0, n.fires + (liked ? -1 : 1)) } : n
+    );
+    setNotes(updateFires);
+    setMyNotes(updateFires);
+    
+    // Sincronizar con servidor (sin revertir si falla)
     try {
-      const { data } = await supabase.rpc('toggle_fire', { p_pensamiento_id: noteId, p_device_id: deviceId });
-      if (data?.fires !== undefined) {
-        const sync = prev => prev.map(n => n.id === noteId ? { ...n, fires: data.fires } : n);
-        setNotes(sync); setMyNotes(sync);
+      const { data, error } = await supabase.rpc('toggle_fire', { 
+        p_pensamiento_id: noteId, 
+        p_device_id: deviceId 
+      });
+      
+      // Solo actualizar si el servidor devuelve un valor válido Y es diferente
+      if (!error && data && typeof data.fires === 'number') {
+        setNotes(prev => prev.map(n => n.id === noteId ? { ...n, fires: data.fires } : n));
+        setMyNotes(prev => prev.map(n => n.id === noteId ? { ...n, fires: data.fires } : n));
       }
-    } catch {}
+    } catch (e) {
+      // Si falla, mantenemos el cambio local (no revertimos)
+      console.log('Error sincronizando fire, manteniendo estado local');
+    }
   }
 
   async function watchVideoForNote() {
@@ -809,7 +830,7 @@ export default function FireNotesApp() {
             </div>
             
             <div style={styles.warningBox}>
-              <p style={{ fontWeight: 700, color: '#FFD700', margin: 0 }}>⚠️ OJO</p>
+              <p style={{ fontWeight: 700, color: '#FFD700', margin: 0 }}>⚠️ IMPORTANTE</p>
               <p style={{ fontSize: 13, color: '#CCC', margin: '8px 0 0 0' }}>
                 Anónimo ≠ Invisible. Guardamos registros técnicos. Si haces algo ilegal, cooperamos con las autoridades.
               </p>
