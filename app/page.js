@@ -467,7 +467,7 @@ export default function FireNotesApp() {
       {/* ========== HEADER ========== */}
       <header style={styles.header}>
         <button onClick={() => setShowInfoModal(true)} style={styles.infoBtn}>
-          <span style={{ fontSize: 14 }}>ℹ️</span>
+          <span style={{ fontSize: 16, fontWeight: 700 }}>?</span>
         </button>
         
         <div style={styles.logo}>
@@ -735,28 +735,28 @@ export default function FireNotesApp() {
             
             {videosWatchedToday < MAX_VIDEOS_DIA && (
               <button onClick={watchVideoForNote} style={styles.optionBtn}>
-                <span>🎬</span>
+                <span style={{ fontSize: 22 }}>🎬</span>
                 <div>
-                  <strong>Ver video</strong>
-                  <small>+1 nota ({MAX_VIDEOS_DIA - videosWatchedToday} left)</small>
+                  <strong style={{ fontSize: 15 }}>Ver video</strong>
+                  <small style={{ display: 'block', color: '#888', fontSize: 12 }}>+1 nota ({MAX_VIDEOS_DIA - videosWatchedToday} restantes)</small>
                 </div>
               </button>
             )}
             
             <button onClick={() => purchaseNotes('extra3')} style={styles.optionBtn}>
-              <span>🔥</span>
+              <span style={{ fontSize: 22 }}>🔥</span>
               <div>
-                <strong>+3 notas</strong>
-                <small>$9.99 MXN</small>
+                <strong style={{ fontSize: 15 }}>+3 notas</strong>
+                <small style={{ display: 'block', color: '#888', fontSize: 12 }}>$9.99 MXN</small>
               </div>
             </button>
             
             {!hasUnlimitedToday && (
               <button onClick={() => purchaseNotes('ilimitado')} style={{ ...styles.optionBtn, borderColor: '#FFD700' }}>
-                <span>∞</span>
+                <span style={{ fontSize: 22 }}>∞</span>
                 <div>
-                  <strong style={{ color: '#FFD700' }}>Ilimitado hoy</strong>
-                  <small>$29.99 MXN</small>
+                  <strong style={{ fontSize: 15, color: '#FFD700' }}>Ilimitado hoy</strong>
+                  <small style={{ display: 'block', color: '#888', fontSize: 12 }}>$29.99 MXN</small>
                 </div>
               </button>
             )}
@@ -764,10 +764,10 @@ export default function FireNotesApp() {
             <div style={styles.dividerLine}><span>o con crypto</span></div>
             
             <button onClick={() => purchaseNotes('extra3')} style={{ ...styles.optionBtn, borderColor: '#F7931A' }}>
-              <span>₿</span>
+              <span style={{ fontSize: 22 }}>₿</span>
               <div>
-                <strong style={{ color: '#F7931A' }}>Bitcoin</strong>
-                <small>Lightning Network</small>
+                <strong style={{ fontSize: 15, color: '#F7931A' }}>Bitcoin</strong>
+                <small style={{ display: 'block', color: '#888', fontSize: 12 }}>Lightning Network</small>
               </div>
             </button>
             
@@ -798,26 +798,25 @@ export default function FireNotesApp() {
           <div style={styles.modal} onClick={e => e.stopPropagation()}>
             <div style={styles.modalIcon}>🔥</div>
             <h2 style={styles.modalTitle}>FIRE NOTES</h2>
-            <p style={styles.modalSub}>Pensamientos anónimos a 1km</p>
+            <p style={styles.modalSub}>Tu voz anónima a 1km</p>
             
             <div style={styles.rulesList}>
-              <div style={styles.rule}><span>✅</span> Di lo que piensas</div>
-              <div style={styles.rule}><span>✅</span> Quéjate de lo que sea</div>
-              <div style={styles.rule}><span>✅</span> Opiniones honestas</div>
-              <div style={{ ...styles.rule, borderTop: '1px solid #222', paddingTop: 12, marginTop: 8 }}><span>❌</span> Amenazas con nombre</div>
-              <div style={styles.rule}><span>❌</span> Contenido de menores</div>
-              <div style={styles.rule}><span>❌</span> Acosar identificando</div>
+              <div style={styles.rule}><span>💭</span> Suelta lo que sientes</div>
+              <div style={styles.rule}><span>🎭</span> Nadie sabe quién eres</div>
+              <div style={styles.rule}><span>📍</span> Solo te leen cerca de ti</div>
+              <div style={styles.rule}><span>⏰</span> Desaparece en 24h</div>
+              <div style={{ ...styles.rule, borderTop: '1px solid #222', paddingTop: 12, marginTop: 8, color: '#FF5252' }}><span>❌</span> Sin amenazas ni acoso</div>
             </div>
             
             <div style={styles.warningBox}>
-              <p style={{ fontWeight: 700, color: '#FFD700', margin: 0 }}>⚠️ IMPORTANTE</p>
+              <p style={{ fontWeight: 700, color: '#FFD700', margin: 0 }}>⚠️ OJO</p>
               <p style={{ fontSize: 13, color: '#CCC', margin: '8px 0 0 0' }}>
-                Eres anónimo pero NO invisible. Guardamos registros. Actividad ilegal = cooperamos con autoridades.
+                Anónimo ≠ Invisible. Guardamos registros técnicos. Si haces algo ilegal, cooperamos con las autoridades.
               </p>
             </div>
             
             <button onClick={() => { setShowInfoModal(false); setShowTermsModal(true); }} style={styles.linkBtn}>
-              Ver términos completos
+              Ver términos
             </button>
             <button onClick={() => setShowInfoModal(false)} style={styles.ghostBtn}>Cerrar</button>
           </div>
@@ -965,7 +964,7 @@ const styles = {
   modalTitle: { fontSize: 22, fontWeight: 700, textAlign: 'center', color: '#FFF', margin: '0 0 4px 0' },
   modalSub: { fontSize: 14, color: '#666', textAlign: 'center', marginBottom: 20 },
   
-  optionBtn: { width: '100%', display: 'flex', alignItems: 'center', gap: 16, padding: '16px', borderRadius: 14, border: '1px solid #252525', background: '#1a1a1a', cursor: 'pointer', marginBottom: 12, textAlign: 'left', color: '#FFF', fontSize: 24, transition: 'all 0.2s ease' },
+  optionBtn: { width: '100%', display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', borderRadius: 14, border: '1px solid #252525', background: '#1a1a1a', cursor: 'pointer', marginBottom: 10, textAlign: 'left', color: '#FFF', transition: 'all 0.2s ease' },
   
   dividerLine: { display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '16px 0', color: '#444', fontSize: 12, gap: 12 },
   
