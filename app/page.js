@@ -150,7 +150,17 @@ export default function App() {
 
   const buy = async tipo => { try { await supabase.from('compras').insert({ device_id: did, tipo, fecha: new Date().toISOString().split('T')[0] }); tipo === 'ilimitado' ? setUnlim(true) : setExtras(p => p + 3); setShowBuy(false); vib(40); } catch(e){} };
 
-  const report = async id => { try { const { data } = await supabase.rpc('reportar_nota', { p_pensamiento_id: id, p_device_id: did, p_razon: 'inapropiado' }); if (data?.ok) { setShowReport(null); vib(25); if (data.eliminado) { setNotas(p => p.filter(n => n.id !== id)); setMis(p => p.filter(n => n.id !== id)); } } } catch(e){} };
+  const report = async id => { 
+    try { 
+      const { data, error } = await supabase.rpc('reportar_nota', { p_pensamiento_id: id, p_device_id: did, p_razon: 'inapropiado' }); 
+      if (error) { alert('Error: ' + error.message); return; }
+      if (data?.ok) { 
+        setShowReport(null); 
+        vib(25); 
+        if (data.eliminado) { setNotas(p => p.filter(n => n.id !== id)); setMis(p => p.filter(n => n.id !== id)); } 
+      } else { alert(data?.error || 'Error al reportar'); }
+    } catch(e){ alert('Error de conexión'); } 
+  };
 
   if (locStatus === 'denied') return (
     <div style={S.cont}><div style={S.center}>
