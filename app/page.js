@@ -18,14 +18,14 @@ function playFireSound() {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.frequency.setValueAtTime(500, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(150, ctx.currentTime + 0.1);
-    gain.gain.setValueAtTime(0.12, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+    osc.frequency.setValueAtTime(600, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + 0.15);
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start();
-    osc.stop(ctx.currentTime + 0.1);
+    osc.stop(ctx.currentTime + 0.15);
   } catch (e) {}
 }
 
@@ -34,28 +34,27 @@ function playPublishSound() {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.frequency.setValueAtTime(400, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.3);
-    gain.gain.setValueAtTime(0.1, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+    osc.frequency.setValueAtTime(300, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.2);
+    gain.gain.setValueAtTime(0.12, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start();
-    osc.stop(ctx.currentTime + 0.3);
+    osc.stop(ctx.currentTime + 0.2);
   } catch (e) {}
 }
 
-function vibrate(ms = 40) {
+function vibrate(ms = 50) {
   try { navigator.vibrate?.(ms); } catch (e) {}
 }
 
 function getDeviceId() {
   if (typeof window === 'undefined') return 'server';
-  let id = localStorage.getItem('fire_device_id') || sessionStorage.getItem('fire_device_id');
+  let id = localStorage.getItem('fire_device_id');
   if (!id) {
     id = 'device_' + crypto.randomUUID();
     localStorage.setItem('fire_device_id', id);
-    sessionStorage.setItem('fire_device_id', id);
   }
   return id;
 }
@@ -84,11 +83,6 @@ function timeAgo(d) {
   if (m < 60) return `${m}m`;
   const h = Math.floor(m / 60);
   return h < 24 ? `${h}h` : '1d';
-}
-
-function calculateBurnLevel(d) {
-  const ms = 1000 * 60 * 60 * 24;
-  return Math.min((Date.now() - new Date(d).getTime()) / ms, 1);
 }
 
 function isValidNoteText(t) {
@@ -123,7 +117,6 @@ export default function FireNotesApp() {
   const [hasUnlimitedToday, setHasUnlimitedToday] = useState(false);
   
   const locationWatchRef = useRef(null);
-  
   const totalAvailable = hasUnlimitedToday ? 999 : MAX_NOTAS_GRATIS + videosWatchedToday + extraNotesBought;
   const canPost = hasUnlimitedToday || notesUsedToday < totalAvailable;
   const remaining = totalAvailable - notesUsedToday;
@@ -131,12 +124,10 @@ export default function FireNotesApp() {
   useEffect(() => {
     setDeviceId(getDeviceId());
     setFingerprint(generateFingerprint());
-    
-    if (!localStorage.getItem('fire_welcome_shown_v1')) {
+    if (!localStorage.getItem('fire_welcome_v2')) {
       setShowWelcomeModal(true);
-      localStorage.setItem('fire_welcome_shown_v1', 'true');
+      localStorage.setItem('fire_welcome_v2', 'true');
     }
-    
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         p => { setLocation({ lat: p.coords.latitude, lng: p.coords.longitude }); setLocationStatus('ok'); },
@@ -153,7 +144,6 @@ export default function FireNotesApp() {
         }), () => {}, { enableHighAccuracy: true, timeout: 30000, maximumAge: 60000 }
       );
     } else setLocationStatus('error');
-    
     return () => { if (locationWatchRef.current) navigator.geolocation.clearWatch(locationWatchRef.current); };
   }, []);
 
@@ -176,14 +166,12 @@ export default function FireNotesApp() {
       const { data } = await supabase.from('pensamientos')
         .select('id, texto, latitud, longitud, fires, created_at, expires_at, device_id')
         .gt('expires_at', new Date().toISOString())
-        .or('eliminado.is.null,eliminado.eq.false')
+        .eq('eliminado', false)
         .order('created_at', { ascending: false }).limit(200);
-      
       const nearby = (data || [])
         .filter(n => calculateDistanceKm(location.lat, location.lng, n.latitud, n.longitud) <= RADIO_KM)
         .map(n => ({ ...n, distanceMeters: Math.round(calculateDistanceKm(location.lat, location.lng, n.latitud, n.longitud) * 1000) }));
       setNotes(nearby);
-      
       const { data: r } = await supabase.from('reacciones').select('pensamiento_id').eq('device_id', deviceId);
       if (r) setMyReactions(new Set(r.map(x => x.pensamiento_id)));
     } catch (e) { console.error(e); }
@@ -196,7 +184,7 @@ export default function FireNotesApp() {
         .select('id, texto, latitud, longitud, fires, created_at, expires_at')
         .eq('device_id', deviceId)
         .gt('expires_at', new Date().toISOString())
-        .or('eliminado.is.null,eliminado.eq.false')
+        .eq('eliminado', false)
         .order('created_at', { ascending: false });
       setMyNotes(data || []);
     } catch (e) { console.error(e); }
@@ -217,36 +205,31 @@ export default function FireNotesApp() {
   async function publishNote() {
     if (!location?.lat) { setErrorMessage('Necesitamos tu ubicación'); return; }
     if (!canPost) { setShowBuyModal(true); return; }
-    if (!isValidNoteText(noteText)) { setErrorMessage('Solo letras, números y puntuación. Máximo 200.'); return; }
-    
+    if (!isValidNoteText(noteText)) { setErrorMessage('Solo letras, números y puntuación. Máx 200.'); return; }
     setIsSending(true);
     setErrorMessage('');
-    
     try {
       const { data, error } = await supabase.rpc('publicar_pensamiento', {
         p_texto: noteText.trim(), p_lat: location.lat, p_lng: location.lng, p_device_id: deviceId, p_fingerprint: fingerprint
       });
-      
       if (error || !data.ok) {
         setErrorMessage(data?.error || 'Error al publicar');
         if (data?.sin_notas) setShowBuyModal(true);
         setIsSending(false);
         return;
       }
-      
       setIsAnimating(true);
       playPublishSound();
-      vibrate(80);
+      vibrate(100);
       setNotesUsedToday(data.usados);
       setNotes(prev => [{ ...data.nota, distanceMeters: 0 }, ...prev]);
       setMyNotes(prev => [data.nota, ...prev]);
       setNoteText('');
-      
       setTimeout(() => {
         setIsAnimating(false);
         setShowSuccessToast(true);
-        setTimeout(() => { setShowSuccessToast(false); setCurrentScreen('feed'); }, 1200);
-      }, 400);
+        setTimeout(() => { setShowSuccessToast(false); setCurrentScreen('feed'); }, 1500);
+      }, 500);
     } catch (e) { setErrorMessage('Error de conexión'); }
     finally { setIsSending(false); }
   }
@@ -254,18 +237,15 @@ export default function FireNotesApp() {
   async function toggleFire(noteId) {
     const liked = myReactions.has(noteId);
     playFireSound();
-    vibrate(25);
-    
+    vibrate(30);
     setMyReactions(prev => {
       const next = new Set(prev);
       liked ? next.delete(noteId) : next.add(noteId);
       return next;
     });
-    
-    const update = prev => prev.map(n => n.id === noteId ? { ...n, fires: n.fires + (liked ? -1 : 1) } : n);
+    const update = prev => prev.map(n => n.id === noteId ? { ...n, fires: Math.max(0, n.fires + (liked ? -1 : 1)) } : n);
     setNotes(update);
     setMyNotes(update);
-    
     try {
       const { data } = await supabase.rpc('toggle_fire', { p_pensamiento_id: noteId, p_device_id: deviceId });
       if (data?.fires !== undefined) {
@@ -279,7 +259,7 @@ export default function FireNotesApp() {
   async function watchVideoForNote() {
     try {
       const { data } = await supabase.rpc('ver_video', { p_device_id: deviceId, p_fingerprint: fingerprint });
-      if (data?.ok) { setVideosWatchedToday(data.videos); setShowBuyModal(false); vibrate(40); }
+      if (data?.ok) { setVideosWatchedToday(data.videos); setShowBuyModal(false); vibrate(50); }
     } catch (e) { console.error(e); }
   }
 
@@ -289,7 +269,7 @@ export default function FireNotesApp() {
       if (type === 'ilimitado') setHasUnlimitedToday(true);
       else setExtraNotesBought(prev => prev + 3);
       setShowBuyModal(false);
-      vibrate(40);
+      vibrate(50);
     } catch (e) { console.error(e); }
   }
 
@@ -298,7 +278,7 @@ export default function FireNotesApp() {
       const { data, error } = await supabase.rpc('reportar_nota', { p_pensamiento_id: noteId, p_device_id: deviceId, p_razon: 'inapropiado' });
       if (error) { alert('Error: ' + error.message); return; }
       setShowReportModal(null);
-      vibrate(25);
+      vibrate(30);
       if (data?.ok) {
         setShowReportedToast(true);
         setTimeout(() => setShowReportedToast(false), 2000);
@@ -314,12 +294,12 @@ export default function FireNotesApp() {
     return (
       <div style={styles.container}>
         <div style={styles.centerContent}>
-          <div style={{ fontSize: 72, marginBottom: 20 }}>📍</div>
-          <h2 style={{ color: '#FF6B35', marginBottom: 12 }}>Activa tu ubicación</h2>
-          <p style={{ color: '#999', marginBottom: 24, lineHeight: 1.6, maxWidth: 280 }}>
+          <div style={{ fontSize: 80, marginBottom: 24 }}>📍</div>
+          <h2 style={{ color: '#FFD700', marginBottom: 16, fontSize: 24 }}>Activa tu ubicación</h2>
+          <p style={{ color: '#A0A0A0', marginBottom: 32, lineHeight: 1.7, maxWidth: 300, textAlign: 'center' }}>
             FIRE NOTES muestra notas a 1km de ti. Sin ubicación no funciona.
           </p>
-          <button onClick={() => window.location.reload()} style={styles.primaryButton}>Reintentar</button>
+          <button onClick={() => window.location.reload()} style={styles.primaryButton}>🔄 Reintentar</button>
         </div>
       </div>
     );
@@ -330,24 +310,23 @@ export default function FireNotesApp() {
   return (
     <div style={styles.container}>
       <header style={styles.header}>
-        <button onClick={() => setShowInfoModal(true)} style={styles.infoButton}>?</button>
+        <button onClick={() => setShowInfoModal(true)} style={styles.headerButton}>
+          <span style={{ fontSize: 20 }}>❓</span>
+        </button>
         <div style={styles.logoContainer}>
-          <span style={{ fontSize: 26 }}>🔥</span>
+          <span style={{ fontSize: 32 }}>🔥</span>
           <span style={styles.logoText}>FIRE</span>
-          <span style={styles.logoSubtext}>NOTES</span>
         </div>
         <div style={styles.notesCounter}>
           {hasUnlimitedToday ? (
-            <span style={{ color: '#FFD700', fontSize: 20, fontWeight: 700 }}>∞</span>
+            <span style={{ color: '#FFD700', fontSize: 24, fontWeight: 800 }}>∞</span>
           ) : (
-            <>
+            <div style={{ display: 'flex', gap: 4 }}>
               {[...Array(3)].map((_, i) => (
-                <span key={i} style={{ fontSize: 16, opacity: i < remaining ? 1 : 0.2 }}>
-                  {i < remaining ? '📝' : '⬜'}
-                </span>
+                <span key={i} style={{ fontSize: 18, opacity: i < remaining ? 1 : 0.3 }}>🔥</span>
               ))}
-              {remaining > 3 && <span style={{ color: '#FFD700', fontSize: 12, fontWeight: 700, marginLeft: 4 }}>+{remaining - 3}</span>}
-            </>
+              {remaining > 3 && <span style={{ color: '#FFD700', fontSize: 14, fontWeight: 700 }}>+{remaining - 3}</span>}
+            </div>
           )}
         </div>
       </header>
@@ -355,20 +334,20 @@ export default function FireNotesApp() {
       {currentScreen === 'feed' && (
         <div style={styles.tabsContainer}>
           <button onClick={() => setActiveTab('feed')} style={{ ...styles.tab, ...(activeTab === 'feed' ? styles.tabActive : {}) }}>
-            🌍 Cerca de ti
+            🌍 Cerca
           </button>
           <button onClick={() => setActiveTab('myNotes')} style={{ ...styles.tab, ...(activeTab === 'myNotes' ? styles.tabActive : {}) }}>
-            📝 Tus notas ({myNotes.length})
+            🔥 Mis notas ({myNotes.length})
           </button>
         </div>
       )}
 
       {!isLoading && currentScreen === 'feed' && activeTab === 'feed' && (
         <div style={styles.zoneIndicator}>
-          {notes.length === 0 && '❄️ Zona fría - sé el primero'}
-          {notes.length > 0 && notes.length < 5 && `🌡️ ${notes.length} nota${notes.length > 1 ? 's' : ''} cerca`}
-          {notes.length >= 5 && notes.length < 15 && `🔥 ¡Zona activa! - ${notes.length} notas`}
-          {notes.length >= 15 && <span style={{ color: '#FF6B35' }}>🔥🔥🔥 ¡Zona caliente! - {notes.length} notas</span>}
+          {notes.length === 0 && '❄️ Zona fría - ¡sé el primero!'}
+          {notes.length > 0 && notes.length < 5 && `🔥 ${notes.length} nota${notes.length > 1 ? 's' : ''} cerca`}
+          {notes.length >= 5 && notes.length < 15 && `🔥🔥 ¡Zona activa! ${notes.length} notas`}
+          {notes.length >= 15 && <span style={{ color: '#FFD700' }}>🔥🔥🔥 ¡ZONA EN LLAMAS! {notes.length} notas</span>}
         </div>
       )}
 
@@ -377,45 +356,44 @@ export default function FireNotesApp() {
           {isLoading ? (
             <div style={styles.centerContent}>
               <div style={styles.spinner}></div>
-              <p style={{ color: '#666', marginTop: 16 }}>Buscando notas cerca de ti...</p>
+              <p style={{ color: '#888', marginTop: 20, fontSize: 16 }}>Buscando fuego cerca...</p>
             </div>
           ) : displayNotes.length === 0 ? (
             <div style={styles.centerContent}>
-              <div style={{ fontSize: 52 }}>🔥</div>
-              <p style={{ color: '#888', marginTop: 12 }}>{activeTab === 'feed' ? 'No hay notas cerca de ti' : 'No tienes notas activas'}</p>
-              <p style={{ color: '#555', fontSize: 14 }}>{activeTab === 'feed' ? 'Sé el primero en soltar un pensamiento' : 'Tus notas desaparecen en 24 horas'}</p>
+              <div style={{ fontSize: 64, marginBottom: 16 }}>🔥</div>
+              <p style={{ color: '#888', fontSize: 18 }}>{activeTab === 'feed' ? 'No hay notas cerca' : 'No tienes notas activas'}</p>
+              <p style={{ color: '#666', fontSize: 14, marginTop: 8 }}>{activeTab === 'feed' ? '¡Sé el primero en encender esta zona!' : 'Tus notas duran 24 horas'}</p>
             </div>
           ) : (
             <div style={styles.notesGrid}>
               {displayNotes.map((note, idx) => {
-                const burnLevel = calculateBurnLevel(note.created_at);
                 const isHot = note.fires >= 10;
+                const isOnFire = note.fires >= 25;
+                const isLegendary = note.fires >= 50;
                 const isLiked = myReactions.has(note.id);
-                
                 return (
                   <div key={note.id} style={{
                     ...styles.noteCard,
-                    opacity: 1 - burnLevel * 0.25,
-                    boxShadow: isHot ? '0 8px 32px rgba(0,0,0,0.4), 0 0 20px rgba(255,107,53,0.3)' : '0 4px 20px rgba(0,0,0,0.35)',
-                    border: isHot ? '2px solid rgba(255,107,53,0.4)' : '1px solid rgba(255,255,255,0.05)',
-                    animation: `noteAppear 0.35s ease ${idx * 0.03}s both`,
+                    background: isLegendary ? 'linear-gradient(135deg, #2D1B4E 0%, #1A1A2E 100%)' : isOnFire ? 'linear-gradient(135deg, #2E1A47 0%, #1A1A2E 100%)' : isHot ? 'linear-gradient(135deg, #252538 0%, #1A1A2E 100%)' : '#1E1E2E',
+                    borderColor: isLegendary ? '#FFD700' : isOnFire ? '#9B59B6' : isHot ? '#8E44AD' : '#2D2D44',
+                    animation: `noteAppear 0.4s ease ${idx * 0.05}s both`,
                   }}>
-                    <div style={styles.noteLines}></div>
-                    {burnLevel > 0.75 && <div style={styles.burnEffect}></div>}
+                    {isLegendary && <div style={styles.badgeLegendary}>👑 LEGENDARIA</div>}
+                    {isOnFire && !isLegendary && <div style={styles.badgeOnFire}>🔥 EN LLAMAS</div>}
+                    {isHot && !isOnFire && <div style={styles.badgeHot}>⭐ POPULAR</div>}
                     <p style={styles.noteText}>{note.texto}</p>
                     <div style={styles.noteFooter}>
-                      <span style={styles.noteTime}>
-                        {timeAgo(note.created_at)}{activeTab === 'feed' ? ` (${note.distanceMeters}m)` : ''}
-                      </span>
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <button onClick={() => setShowReportModal(note.id)} style={styles.reportButton}>⚑</button>
+                      <span style={styles.noteTime}>{timeAgo(note.created_at)} • {activeTab === 'feed' ? `${note.distanceMeters}m` : ''}</span>
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                        <button onClick={() => setShowReportModal(note.id)} style={styles.reportButton}>🚩</button>
                         <button onClick={() => toggleFire(note.id)} style={{
                           ...styles.fireButton,
-                          background: isLiked ? 'rgba(255,107,53,0.15)' : 'transparent',
-                          transform: isLiked ? 'scale(1.1)' : 'scale(1)',
+                          background: isLiked ? 'linear-gradient(135deg, #9B59B6 0%, #8E44AD 100%)' : 'rgba(155, 89, 182, 0.2)',
+                          transform: isLiked ? 'scale(1.05)' : 'scale(1)',
+                          boxShadow: isLiked ? '0 0 20px rgba(155, 89, 182, 0.5)' : 'none',
                         }}>
-                          <span style={{ animation: isHot ? 'flicker 0.5s infinite' : 'none' }}>🔥</span>
-                          <span style={{ fontWeight: 600, marginLeft: 4 }}>{note.fires}</span>
+                          <span style={{ fontSize: 22 }}>🔥</span>
+                          <span style={{ fontWeight: 700, marginLeft: 8, fontSize: 18 }}>{note.fires}</span>
                         </button>
                       </div>
                     </div>
@@ -429,80 +407,55 @@ export default function FireNotesApp() {
 
       {currentScreen === 'write' && (
         <main style={styles.writeContainer}>
-          <div style={{ ...styles.writePaper, ...(isAnimating ? { animation: 'flyUp 0.4s ease forwards' } : {}) }}>
-            <div style={styles.noteLines}></div>
-            <textarea
-              value={noteText}
-              onChange={e => e.target.value.length <= MAX_CARACTERES && setNoteText(e.target.value)}
-              placeholder="Suelta tu pensamiento..."
-              style={styles.textInput}
-              autoFocus
-            />
-            <div style={styles.charCounter}>
-              <span style={{ color: noteText.length > 180 ? '#E63946' : '#8B7355' }}>{noteText.length}</span>/{MAX_CARACTERES}
-            </div>
+          <div style={{ ...styles.writePaper, ...(isAnimating ? { animation: 'flyUp 0.5s ease forwards' } : {}) }}>
+            <textarea value={noteText} onChange={e => e.target.value.length <= MAX_CARACTERES && setNoteText(e.target.value)} placeholder="¿Qué quieres soltar? 🔥" style={styles.textInput} autoFocus />
+            <div style={styles.charCounter}><span style={{ color: noteText.length > 180 ? '#E74C3C' : '#888' }}>{noteText.length}</span>/{MAX_CARACTERES}</div>
           </div>
-          {errorMessage && <p style={{ color: '#FF5252', textAlign: 'center', fontSize: 14 }}>{errorMessage}</p>}
-          <button onClick={publishNote} disabled={isSending || !noteText.trim()} style={{ ...styles.primaryButton, opacity: isSending || !noteText.trim() ? 0.5 : 1 }}>
-            {isSending ? 'Soltando...' : '🔥 SOLTAR'}
+          {errorMessage && <p style={{ color: '#E74C3C', textAlign: 'center', fontSize: 14, marginTop: 12 }}>{errorMessage}</p>}
+          <button onClick={publishNote} disabled={isSending || !noteText.trim()} style={{ ...styles.primaryButton, opacity: isSending || !noteText.trim() ? 0.5 : 1, marginTop: 24 }}>
+            {isSending ? '🔥 Soltando...' : '🔥 SOLTAR PENSAMIENTO'}
           </button>
-          <button onClick={() => { setCurrentScreen('feed'); setErrorMessage(''); }} style={styles.ghostButton}>Cancelar</button>
-          {location && <p style={{ color: '#555', fontSize: 12, textAlign: 'center', marginTop: 8 }}>📍 Se publicará en tu ubicación actual</p>}
+          <button onClick={() => { setCurrentScreen('feed'); setErrorMessage(''); }} style={styles.secondaryButton}>Cancelar</button>
+          <p style={{ color: '#666', fontSize: 13, textAlign: 'center', marginTop: 16 }}>📍 Visible a 1km • ⏰ Desaparece en 24h</p>
         </main>
       )}
 
-      {currentScreen === 'feed' && (
-        <button onClick={() => canPost ? setCurrentScreen('write') : setShowBuyModal(true)} style={styles.fab}>✏️</button>
-      )}
+      {currentScreen === 'feed' && <button onClick={() => canPost ? setCurrentScreen('write') : setShowBuyModal(true)} style={styles.fab}>✏️</button>}
 
       {showSuccessToast && <div style={styles.toast}>🔥 ¡Nota soltada!</div>}
-      {showReportedToast && <div style={{ ...styles.toast, background: 'rgba(76,175,80,0.95)' }}>✓ Nota reportada</div>}
+      {showReportedToast && <div style={{ ...styles.toast, background: 'linear-gradient(135deg, #27AE60 0%, #2ECC71 100%)' }}>✅ Nota reportada</div>}
 
       {showBuyModal && (
         <div style={styles.overlay} onClick={() => setShowBuyModal(false)}>
           <div style={styles.modal} onClick={e => e.stopPropagation()}>
-            <h2 style={styles.modalTitle}>Se acabaron tus notas 🔥</h2>
-            <p style={styles.modalSubtitle}>Consigue más para seguir soltando:</p>
-            
+            <h2 style={styles.modalTitle}>🔥 ¿Más fuego?</h2>
+            <p style={styles.modalSubtitle}>Se acabaron tus notas de hoy</p>
             {videosWatchedToday < MAX_VIDEOS_DIA && (
               <button onClick={watchVideoForNote} style={styles.buyOption}>
-                <span style={styles.buyOptionIcon}>🎬</span>
-                <div>
-                  <strong>Ver un video</strong>
-                  <p style={styles.buyOptionDesc}>+1 nota gratis ({MAX_VIDEOS_DIA - videosWatchedToday} restantes hoy)</p>
+                <span style={{ fontSize: 32 }}>🎬</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 16 }}>Ver un video</div>
+                  <div style={{ color: '#888', fontSize: 13 }}>+1 nota gratis ({MAX_VIDEOS_DIA - videosWatchedToday} restantes)</div>
                 </div>
               </button>
             )}
-            
             <button onClick={() => purchaseNotes('extra3')} style={styles.buyOption}>
-              <span style={styles.buyOptionIcon}>🔥</span>
-              <div>
-                <strong>+3 pensamientos</strong>
-                <p style={styles.buyOptionDesc}>$9.99 MXN</p>
+              <span style={{ fontSize: 32 }}>🔥</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>+3 notas</div>
+                <div style={{ color: '#FFD700', fontSize: 14 }}>$9.99 MXN</div>
               </div>
             </button>
-            
             {!hasUnlimitedToday && (
-              <button onClick={() => purchaseNotes('ilimitado')} style={styles.buyOption}>
-                <span style={styles.buyOptionIcon}>∞</span>
-                <div>
-                  <strong>Ilimitado hoy</strong>
-                  <p style={styles.buyOptionDesc}>$29.99 MXN</p>
+              <button onClick={() => purchaseNotes('ilimitado')} style={{ ...styles.buyOption, borderColor: '#FFD700' }}>
+                <span style={{ fontSize: 32 }}>👑</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: 16, color: '#FFD700' }}>ILIMITADO HOY</div>
+                  <div style={{ color: '#FFD700', fontSize: 14 }}>$29.99 MXN</div>
                 </div>
               </button>
             )}
-            
-            <div style={styles.divider}><span>o paga con</span></div>
-            
-            <button onClick={() => purchaseNotes('extra3')} style={{ ...styles.buyOption, borderColor: '#F7931A' }}>
-              <span style={styles.buyOptionIcon}>₿</span>
-              <div>
-                <strong>Bitcoin / Crypto</strong>
-                <p style={styles.buyOptionDesc}>+3 notas • Lightning Network</p>
-              </div>
-            </button>
-            
-            <button onClick={() => setShowBuyModal(false)} style={styles.ghostButton}>Cerrar</button>
+            <button onClick={() => setShowBuyModal(false)} style={styles.secondaryButton}>Cerrar</button>
           </div>
         </div>
       )}
@@ -510,11 +463,11 @@ export default function FireNotesApp() {
       {showReportModal && (
         <div style={styles.overlay} onClick={() => setShowReportModal(null)}>
           <div style={styles.modal} onClick={e => e.stopPropagation()}>
-            <h2 style={styles.modalTitle}>⚑ Reportar nota</h2>
+            <h2 style={styles.modalTitle}>🚩 Reportar</h2>
             <p style={styles.modalSubtitle}>¿Esta nota viola las reglas?</p>
-            <button onClick={() => reportNote(showReportModal)} style={{ ...styles.primaryButton, background: '#E53935' }}>Sí, reportar</button>
-            <button onClick={() => setShowReportModal(null)} style={styles.ghostButton}>Cancelar</button>
-            <p style={{ fontSize: 12, color: '#555', textAlign: 'center', marginTop: 12 }}>Si muchas personas reportan una nota, se oculta automáticamente.</p>
+            <button onClick={() => reportNote(showReportModal)} style={{ ...styles.primaryButton, background: 'linear-gradient(135deg, #E74C3C 0%, #C0392B 100%)' }}>Sí, reportar</button>
+            <button onClick={() => setShowReportModal(null)} style={styles.secondaryButton}>Cancelar</button>
+            <p style={{ fontSize: 12, color: '#666', textAlign: 'center', marginTop: 16 }}>5 reportes = eliminación automática</p>
           </div>
         </div>
       )}
@@ -522,72 +475,36 @@ export default function FireNotesApp() {
       {showInfoModal && (
         <div style={styles.overlay} onClick={() => setShowInfoModal(false)}>
           <div style={styles.modal} onClick={e => e.stopPropagation()}>
-            <h2 style={styles.modalTitle}>🔥 FIRE NOTES</h2>
-            <p style={{ textAlign: 'center', color: '#888', fontStyle: 'italic', marginBottom: 16 }}>Pensamientos anónimos que flotan a 1km</p>
-            
-            <div style={styles.infoSection}>
-              <h3 style={{ ...styles.infoTitle, color: '#4CAF50' }}>✅ Permitido</h3>
-              <p style={styles.infoRule}>Decir lo que piensas sin filtro</p>
-              <p style={styles.infoRule}>Quejarte de lo que sea</p>
-              <p style={styles.infoRule}>Confesar algo (sin nombres)</p>
-              <p style={styles.infoRule}>Dar tu opinión honesta</p>
-            </div>
-            
-            <div style={styles.infoSection}>
-              <h3 style={{ ...styles.infoTitle, color: '#E53935' }}>❌ Prohibido</h3>
-              <p style={styles.infoRule}>Amenazar a alguien con nombre</p>
-              <p style={styles.infoRule}>Contenido de menores de edad</p>
-              <p style={styles.infoRule}>Acosar a personas identificables</p>
-            </div>
-            
+            <div style={{ fontSize: 48, textAlign: 'center', marginBottom: 16 }}>🔥</div>
+            <h2 style={{ ...styles.modalTitle, fontSize: 28 }}>FIRE NOTES</h2>
+            <p style={{ textAlign: 'center', color: '#888', marginBottom: 24 }}>Pensamientos anónimos a 1km de ti</p>
+            <div style={styles.infoItem}><span style={{ fontSize: 24 }}>🎭</span><span>100% anónimo</span></div>
+            <div style={styles.infoItem}><span style={{ fontSize: 24 }}>📍</span><span>Solo a 1km de ti</span></div>
+            <div style={styles.infoItem}><span style={{ fontSize: 24 }}>⏰</span><span>Desaparece en 24h</span></div>
+            <div style={styles.infoItem}><span style={{ fontSize: 24 }}>🔥</span><span>Dale fuego a lo que te guste</span></div>
             <div style={styles.warningBox}>
-              <p style={{ fontWeight: 'bold', textAlign: 'center', color: '#FFD700' }}>⚠️ IMPORTANTE</p>
-              <p style={{ textAlign: 'center', fontWeight: 'bold', color: '#FFF', marginTop: 8 }}>Eres anónimo, pero NO invisible.</p>
-              <p style={{ textAlign: 'center', fontSize: 13, color: '#AAA', marginTop: 8 }}>Guardamos registros técnicos. Actividad ilegal = cooperamos con autoridades.</p>
+              <p style={{ fontWeight: 700, color: '#FFD700', marginBottom: 8 }}>⚠️ OJO</p>
+              <p style={{ color: '#CCC', fontSize: 13, lineHeight: 1.6 }}>Eres anónimo pero NO invisible. Guardamos registros. Nada ilegal.</p>
             </div>
-            
-            <button onClick={() => { setShowInfoModal(false); setShowTermsModal(true); }} style={{ ...styles.linkButton, marginTop: 16 }}>Ver Términos y Privacidad</button>
-            <button onClick={() => setShowInfoModal(false)} style={{ ...styles.ghostButton, marginTop: 12 }}>Cerrar</button>
+            <button onClick={() => { setShowInfoModal(false); setShowTermsModal(true); }} style={{ ...styles.secondaryButton, marginTop: 16, fontSize: 13 }}>Ver términos y privacidad</button>
+            <button onClick={() => setShowInfoModal(false)} style={styles.primaryButton}>¡Entendido!</button>
           </div>
         </div>
       )}
 
       {showTermsModal && (
         <div style={styles.overlay} onClick={() => setShowTermsModal(false)}>
-          <div style={{ ...styles.modal, maxWidth: 420, maxHeight: '85vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-            <h2 style={styles.modalTitle}>📜 Términos y Privacidad</h2>
-            
-            <div style={styles.legalContent}>
-              <p style={styles.legalParagraph}>Al usar FIRE NOTES aceptas estos términos. Si no estás de acuerdo, no uses la App.</p>
-              
-              <h4 style={styles.legalHeading}>EDAD MÍNIMA</h4>
-              <p style={styles.legalParagraph}>Debes tener al menos 13 años. Menores de 18 requieren permiso parental.</p>
-              
-              <h4 style={styles.legalHeading}>CONTENIDO PROHIBIDO</h4>
-              <p style={styles.legalParagraph}>Amenazas identificables, contenido de menores, incitación a violencia, acoso, actividades ilegales.</p>
-              
-              <h4 style={styles.legalHeading}>MODERACIÓN</h4>
-              <p style={styles.legalParagraph}>5+ reportes = eliminación automática. Nos reservamos el derecho de eliminar contenido sin previo aviso.</p>
-              
-              <h4 style={styles.legalHeading}>ANONIMATO Y LEY</h4>
-              <p style={styles.legalParagraph}>
-                <strong>Guardamos:</strong> ID de dispositivo, IP, ubicación aproximada.<br/><br/>
-                <strong>NO guardamos:</strong> Nombre, email, teléfono.<br/><br/>
-                Ante requerimientos legales, proporcionaremos información que permita identificar usuarios involucrados en actividades ilegales.
-              </p>
-              
-              <h4 style={styles.legalHeading}>RESPONSABILIDAD</h4>
-              <p style={styles.legalParagraph}>FIRE NOTES no es responsable por contenido de usuarios. La App es una plataforma neutral.</p>
-              
-              <h4 style={styles.legalHeading}>JURISDICCIÓN</h4>
-              <p style={styles.legalParagraph}>Estos términos se rigen por las leyes de México. Disputas serán resueltas en tribunales de Ciudad de México.</p>
-              
-              <div style={styles.legalFooter}>
-                <p>Términos completos: <strong>firenotesapp.com/legal</strong></p>
-              </div>
+          <div style={{ ...styles.modal, maxHeight: '80vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <h2 style={styles.modalTitle}>📜 Términos</h2>
+            <div style={{ color: '#AAA', fontSize: 13, lineHeight: 1.8 }}>
+              <p><strong style={{ color: '#FFD700' }}>Edad:</strong> Mínimo 13 años.</p>
+              <p><strong style={{ color: '#FFD700' }}>Prohibido:</strong> Amenazas, contenido de menores, acoso, ilegalidades.</p>
+              <p><strong style={{ color: '#FFD700' }}>Moderación:</strong> 5+ reportes = eliminación automática.</p>
+              <p><strong style={{ color: '#FFD700' }}>Datos:</strong> Guardamos ID dispositivo, IP, ubicación aprox. NO nombre, email, teléfono.</p>
+              <p><strong style={{ color: '#FFD700' }}>Ley:</strong> Cooperamos con autoridades ante actividad ilegal.</p>
+              <p><strong style={{ color: '#FFD700' }}>Jurisdicción:</strong> México.</p>
             </div>
-            
-            <button onClick={() => setShowTermsModal(false)} style={{ ...styles.primaryButton, marginTop: 16 }}>Entendido</button>
+            <button onClick={() => setShowTermsModal(false)} style={{ ...styles.primaryButton, marginTop: 24 }}>Entendido</button>
           </div>
         </div>
       )}
@@ -595,81 +512,71 @@ export default function FireNotesApp() {
       {showWelcomeModal && (
         <div style={styles.overlay}>
           <div style={styles.modal}>
-            <h2 style={styles.modalTitle}>¡Bienvenido a FIRE NOTES! 🔥</h2>
-            
-            <div style={{ padding: '16px 0' }}>
-              <p style={{ ...styles.infoRule, borderBottom: 'none', padding: '12px 0' }}>📝 <strong>Escribe</strong> lo que piensas</p>
-              <p style={{ ...styles.infoRule, borderBottom: 'none', padding: '12px 0' }}>📍 <strong>Solo ven</strong> personas a 1km de ti</p>
-              <p style={{ ...styles.infoRule, borderBottom: 'none', padding: '12px 0' }}>⏰ <strong>Desaparece</strong> en 24 horas</p>
-              <p style={{ ...styles.infoRule, borderBottom: 'none', padding: '12px 0' }}>🔥 <strong>Da fuego</strong> a lo que te gusta</p>
-              <p style={{ ...styles.infoRule, borderBottom: 'none', padding: '12px 0' }}>👤 <strong>100% anónimo</strong> - sin registro</p>
+            <div style={{ fontSize: 64, textAlign: 'center', marginBottom: 16 }}>🔥</div>
+            <h2 style={{ ...styles.modalTitle, fontSize: 28 }}>¡Bienvenido!</h2>
+            <div style={{ marginTop: 24 }}>
+              <div style={styles.welcomeItem}>📝 Escribe lo que piensas</div>
+              <div style={styles.welcomeItem}>📍 Solo te leen a 1km</div>
+              <div style={styles.welcomeItem}>⏰ Desaparece en 24h</div>
+              <div style={styles.welcomeItem}>🔥 Dale fuego a lo que te guste</div>
+              <div style={styles.welcomeItem}>🎭 100% anónimo</div>
             </div>
-            
-            <button onClick={() => setShowWelcomeModal(false)} style={styles.primaryButton}>¡Entendido!</button>
+            <button onClick={() => setShowWelcomeModal(false)} style={{ ...styles.primaryButton, marginTop: 32 }}>🔥 ¡EMPEZAR!</button>
           </div>
         </div>
       )}
 
       <style jsx global>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
         @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes flicker { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
-        @keyframes flyUp { to { transform: translateY(-60px) rotate(-3deg) scale(0.9); opacity: 0; } }
-        @keyframes noteAppear { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-        @keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(-10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+        @keyframes flyUp { to { transform: translateY(-100px) scale(0.8); opacity: 0; } }
+        @keyframes noteAppear { from { opacity: 0; transform: translateY(20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        @keyframes fadeIn { from { opacity: 0; transform: translate(-50%, -20px); } to { opacity: 1; transform: translate(-50%, 0); } }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #000; }
+        body { background: #0D0D15; }
       `}</style>
     </div>
   );
 }
 
 const styles = {
-  container: { minHeight: '100dvh', backgroundColor: '#000', color: '#FFF', fontFamily: "'Georgia', serif", maxWidth: 480, margin: '0 auto', position: 'relative' },
+  container: { minHeight: '100dvh', backgroundColor: '#0D0D15', color: '#FFF', fontFamily: "'Inter', sans-serif", maxWidth: 500, margin: '0 auto', position: 'relative' },
   centerContent: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', padding: 24, textAlign: 'center' },
-  header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', position: 'sticky', top: 0, zIndex: 100, backgroundColor: '#000', borderBottom: '1px solid #1a1a1a' },
-  infoButton: { width: 36, height: 36, borderRadius: '50%', border: '1px solid #333', background: 'transparent', color: '#888', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', position: 'sticky', top: 0, zIndex: 100, background: 'linear-gradient(180deg, #0D0D15 0%, rgba(13,13,21,0.95) 100%)', backdropFilter: 'blur(10px)' },
+  headerButton: { width: 44, height: 44, borderRadius: 12, border: '2px solid #2D2D44', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' },
   logoContainer: { display: 'flex', alignItems: 'center', gap: 8 },
-  logoText: { fontSize: 24, fontWeight: 'bold', background: 'linear-gradient(135deg, #FF6B35, #E63946)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: 2 },
-  logoSubtext: { fontSize: 14, fontWeight: 'normal', color: '#FFF', letterSpacing: 1, opacity: 0.9 },
-  notesCounter: { display: 'flex', alignItems: 'center', gap: 2, minWidth: 70, justifyContent: 'flex-end' },
-  tabsContainer: { display: 'flex', borderBottom: '1px solid #1a1a1a' },
-  tab: { flex: 1, padding: 12, background: 'transparent', border: 'none', color: '#666', fontSize: 14, cursor: 'pointer', transition: '0.2s' },
-  tabActive: { color: '#FF6B35', borderBottom: '2px solid #FF6B35', marginBottom: -1 },
-  zoneIndicator: { textAlign: 'center', padding: '10px 16px', fontSize: 13, color: '#777', fontStyle: 'italic', backgroundColor: 'rgba(255,255,255,0.02)', borderBottom: '1px solid #1a1a1a' },
-  feedContainer: { padding: 16, paddingBottom: 100, minHeight: 'calc(100dvh - 140px)' },
+  logoText: { fontSize: 28, fontWeight: 800, background: 'linear-gradient(135deg, #9B59B6 0%, #FFD700 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: 2 },
+  notesCounter: { minWidth: 80, display: 'flex', justifyContent: 'flex-end' },
+  tabsContainer: { display: 'flex', padding: '8px 16px', gap: 8 },
+  tab: { flex: 1, padding: '14px 16px', background: '#1A1A2E', border: 'none', borderRadius: 12, color: '#666', fontSize: 15, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' },
+  tabActive: { color: '#FFF', background: 'linear-gradient(135deg, #9B59B6 0%, #8E44AD 100%)' },
+  zoneIndicator: { textAlign: 'center', padding: '12px 16px', fontSize: 14, color: '#888', fontWeight: 500 },
+  feedContainer: { padding: 16, paddingBottom: 100 },
   notesGrid: { display: 'flex', flexDirection: 'column', gap: 16 },
-  noteCard: { position: 'relative', backgroundColor: '#F5E6D3', borderRadius: 4, padding: 20, overflow: 'hidden', transition: '0.3s' },
-  noteLines: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'repeating-linear-gradient(0deg, transparent, transparent 28px, rgba(0,0,0,0.03) 28px, rgba(0,0,0,0.03) 29px)', pointerEvents: 'none' },
-  burnEffect: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, transparent 85%, rgba(139,69,19,0.2) 100%)', borderRadius: 4, pointerEvents: 'none' },
-  noteText: { color: '#2D2A26', fontSize: 16, fontStyle: 'italic', lineHeight: 1.6, position: 'relative', zIndex: 1, margin: 0, wordBreak: 'break-word' },
-  noteFooter: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, position: 'relative', zIndex: 1 },
-  noteTime: { fontSize: 12, color: '#8B7355' },
-  reportButton: { background: 'transparent', border: 'none', fontSize: 14, cursor: 'pointer', padding: 4, color: '#8B7355', opacity: 0.4 },
-  fireButton: { background: 'transparent', border: 'none', fontSize: 16, cursor: 'pointer', padding: '6px 10px', borderRadius: 12, color: '#2D2A26', transition: '0.2s', display: 'flex', alignItems: 'center' },
-  writeContainer: { padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: 20, minHeight: 'calc(100dvh - 70px)' },
-  writePaper: { position: 'relative', backgroundColor: '#F5E6D3', borderRadius: 4, padding: 24, minHeight: 200, boxShadow: '2px 4px 12px rgba(0,0,0,0.4)' },
-  textInput: { width: '100%', minHeight: 150, background: 'transparent', border: 'none', outline: 'none', color: '#2D2A26', fontSize: 18, fontStyle: 'italic', fontFamily: "'Georgia', serif", lineHeight: '29px', resize: 'none', position: 'relative', zIndex: 1 },
-  charCounter: { position: 'absolute', bottom: 8, right: 12, fontSize: 12, color: '#8B7355', fontFamily: 'monospace', zIndex: 1 },
-  primaryButton: { width: '100%', padding: 16, border: 'none', borderRadius: 12, background: 'linear-gradient(135deg, #FF6B35, #E63946)', color: '#FFF', fontSize: 18, fontWeight: 'bold', fontFamily: "'Georgia', serif", letterSpacing: 2, cursor: 'pointer', boxShadow: '0 0 20px rgba(230,57,70,0.4)' },
-  ghostButton: { width: '100%', padding: 12, background: 'transparent', border: 'none', color: '#666', fontSize: 16, cursor: 'pointer', marginTop: 8 },
-  linkButton: { display: 'block', background: 'none', border: 'none', color: '#666', fontSize: 12, textDecoration: 'underline', cursor: 'pointer', textAlign: 'center', width: '100%' },
-  fab: { position: 'fixed', bottom: 24, right: 24, width: 64, height: 64, borderRadius: '50%', border: 'none', background: 'linear-gradient(135deg, #FF6B35, #E63946)', fontSize: 26, cursor: 'pointer', boxShadow: '0 4px 24px rgba(230,57,70,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99 },
-  toast: { position: 'fixed', top: 80, left: '50%', transform: 'translateX(-50%)', backgroundColor: 'rgba(255,107,53,0.95)', color: '#FFF', padding: '12px 24px', borderRadius: 24, fontSize: 16, zIndex: 200, boxShadow: '0 4px 20px rgba(0,0,0,0.4)', animation: 'fadeIn 0.3s ease' },
-  overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 150, padding: 20 },
-  modal: { backgroundColor: '#111', borderRadius: 16, padding: 28, maxWidth: 380, width: '100%', border: '1px solid #222' },
-  modalTitle: { fontSize: 22, fontWeight: 'bold', textAlign: 'center', color: '#FFD700', margin: '0 0 8px 0' },
-  modalSubtitle: { fontSize: 14, color: '#888', textAlign: 'center', marginBottom: 20, fontStyle: 'italic' },
-  buyOption: { width: '100%', display: 'flex', alignItems: 'center', gap: 16, padding: 16, borderRadius: 12, border: '1px solid #333', background: '#1a1a1a', cursor: 'pointer', marginBottom: 12, textAlign: 'left', color: '#FFF' },
-  buyOptionIcon: { fontSize: 28, flexShrink: 0 },
-  buyOptionDesc: { fontSize: 13, color: '#888', margin: '4px 0 0 0' },
-  divider: { display: 'flex', alignItems: 'center', gap: 12, margin: '16px 0', color: '#555', fontSize: 12, justifyContent: 'center' },
-  infoSection: { marginTop: 16 },
-  infoTitle: { fontSize: 14, fontWeight: 'bold', marginBottom: 8 },
-  infoRule: { color: '#CCC', fontSize: 14, margin: 0, padding: '6px 0', borderBottom: '1px solid #1a1a1a' },
-  warningBox: { marginTop: 16, padding: 16, borderRadius: 8, border: '2px solid #FFD700', backgroundColor: 'rgba(255,215,0,0.05)' },
-  legalContent: { marginTop: 16, fontSize: 13, color: '#AAA', lineHeight: 1.7 },
-  legalHeading: { fontSize: 14, color: '#FFD700', fontWeight: 'bold', marginBottom: 6, marginTop: 16 },
-  legalParagraph: { marginBottom: 8 },
-  legalFooter: { marginTop: 20, padding: 12, backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 8, textAlign: 'center', fontSize: 12, color: '#888' },
-  spinner: { width: 32, height: 32, border: '3px solid #222', borderTop: '3px solid #FF6B35', borderRadius: '50%', animation: 'spin 1s linear infinite' },
+  noteCard: { position: 'relative', borderRadius: 16, padding: 20, border: '2px solid', transition: 'all 0.3s' },
+  badgeLegendary: { position: 'absolute', top: -10, right: 16, background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 100%)', color: '#000', padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700 },
+  badgeOnFire: { position: 'absolute', top: -10, right: 16, background: 'linear-gradient(135deg, #9B59B6 0%, #8E44AD 100%)', color: '#FFF', padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700 },
+  badgeHot: { position: 'absolute', top: -10, right: 16, background: '#2D2D44', color: '#FFD700', padding: '4px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700 },
+  noteText: { color: '#FFF', fontSize: 17, lineHeight: 1.6, margin: '8px 0 16px 0', wordBreak: 'break-word' },
+  noteFooter: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  noteTime: { fontSize: 13, color: '#666' },
+  reportButton: { background: 'transparent', border: 'none', fontSize: 16, cursor: 'pointer', padding: 8, opacity: 0.5 },
+  fireButton: { display: 'flex', alignItems: 'center', padding: '10px 16px', borderRadius: 50, border: 'none', cursor: 'pointer', transition: 'all 0.2s', color: '#FFF' },
+  writeContainer: { padding: 24, minHeight: 'calc(100dvh - 70px)', display: 'flex', flexDirection: 'column' },
+  writePaper: { background: '#1A1A2E', borderRadius: 16, padding: 20, border: '2px solid #2D2D44', position: 'relative' },
+  textInput: { width: '100%', minHeight: 180, background: 'transparent', border: 'none', outline: 'none', color: '#FFF', fontSize: 18, fontFamily: "'Inter', sans-serif", lineHeight: 1.6, resize: 'none' },
+  charCounter: { position: 'absolute', bottom: 12, right: 16, fontSize: 13, color: '#666', fontFamily: 'monospace' },
+  primaryButton: { width: '100%', padding: 18, border: 'none', borderRadius: 14, background: 'linear-gradient(135deg, #9B59B6 0%, #8E44AD 100%)', color: '#FFF', fontSize: 17, fontWeight: 700, fontFamily: "'Inter', sans-serif", cursor: 'pointer', boxShadow: '0 4px 24px rgba(155, 89, 182, 0.4)', marginTop: 12 },
+  secondaryButton: { width: '100%', padding: 16, background: 'transparent', border: '2px solid #2D2D44', borderRadius: 14, color: '#888', fontSize: 16, fontWeight: 600, cursor: 'pointer', marginTop: 12 },
+  fab: { position: 'fixed', bottom: 24, right: 24, width: 70, height: 70, borderRadius: 20, border: 'none', background: 'linear-gradient(135deg, #9B59B6 0%, #8E44AD 100%)', fontSize: 28, cursor: 'pointer', boxShadow: '0 8px 32px rgba(155, 89, 182, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99 },
+  toast: { position: 'fixed', top: 100, left: '50%', transform: 'translateX(-50%)', background: 'linear-gradient(135deg, #9B59B6 0%, #8E44AD 100%)', color: '#FFF', padding: '14px 28px', borderRadius: 50, fontSize: 16, fontWeight: 600, zIndex: 200, boxShadow: '0 8px 32px rgba(0,0,0,0.3)', animation: 'fadeIn 0.3s ease' },
+  overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 150, padding: 24 },
+  modal: { backgroundColor: '#1A1A2E', borderRadius: 24, padding: 28, maxWidth: 400, width: '100%', border: '2px solid #2D2D44' },
+  modalTitle: { fontSize: 24, fontWeight: 700, textAlign: 'center', color: '#FFF', marginBottom: 8 },
+  modalSubtitle: { fontSize: 15, color: '#888', textAlign: 'center', marginBottom: 24 },
+  buyOption: { width: '100%', display: 'flex', alignItems: 'center', gap: 16, padding: 18, borderRadius: 14, border: '2px solid #2D2D44', background: '#0D0D15', cursor: 'pointer', marginBottom: 12, textAlign: 'left', color: '#FFF', transition: 'all 0.2s' },
+  infoItem: { display: 'flex', alignItems: 'center', gap: 16, padding: '12px 0', borderBottom: '1px solid #2D2D44', fontSize: 15, color: '#CCC' },
+  welcomeItem: { padding: '14px 0', borderBottom: '1px solid #2D2D44', fontSize: 16, color: '#CCC' },
+  warningBox: { marginTop: 24, padding: 20, borderRadius: 14, border: '2px solid #FFD700', background: 'rgba(255,215,0,0.05)', textAlign: 'center' },
+  spinner: { width: 48, height: 48, border: '4px solid #2D2D44', borderTop: '4px solid #9B59B6', borderRadius: '50%', animation: 'spin 1s linear infinite' },
 };
