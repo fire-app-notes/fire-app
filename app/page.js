@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
 // ============================================================
-// 🔥 FIRE NOTES - APP COMPLETA
+// 🔥 FIRE NOTES - CON AMBIENTE Y VISUAL MEJORADO
 // ============================================================
 
 const supabase = createClient(
@@ -14,95 +14,171 @@ const supabase = createClient(
 const RADIO_KM = 1;
 const MAX_NOTAS_GRATIS = 3;
 
+// Colores de notas tipo post-it
+const COLORES_NOTAS = [
+  { bg: '#FFF9C4', shadow: 'rgba(255,235,59,0.3)' },  // Amarillo
+  { bg: '#FFCDD2', shadow: 'rgba(244,67,54,0.2)' },   // Rosa
+  { bg: '#B3E5FC', shadow: 'rgba(3,169,244,0.2)' },   // Azul
+  { bg: '#C8E6C9', shadow: 'rgba(76,175,80,0.2)' },   // Verde
+  { bg: '#F5E6D3', shadow: 'rgba(121,85,72,0.2)' },   // Beige clásico
+  { bg: '#E1BEE7', shadow: 'rgba(156,39,176,0.2)' },  // Morado
+  { bg: '#FFE0B2', shadow: 'rgba(255,152,0,0.2)' },   // Naranja
+];
+
 // ============================================================
-// SONIDO DE FUEGO (Web Audio API - sin archivos)
+// SONIDO AMBIENTE - CREPITAR DE FUEGO
+// ============================================================
+class FireAmbience {
+  constructor() {
+    this.audioContext = null;
+    this.isPlaying = false;
+    this.nodes = [];
+  }
+
+  start() {
+    if (this.isPlaying) return;
+    try {
+      this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      this.isPlaying = true;
+      this.createCrackle();
+    } catch (e) {}
+  }
+
+  createCrackle() {
+    if (!this.isPlaying || !this.audioContext) return;
+
+    const now = this.audioContext.currentTime;
+    
+    // Crear un "crack" individual
+    const oscillator = this.audioContext.createOscillator();
+    const gainNode = this.audioContext.createGain();
+    const filter = this.audioContext.createBiquadFilter();
+
+    // Ruido tipo crepitar
+    const bufferSize = this.audioContext.sampleRate * 0.1;
+    const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 2);
+    }
+
+    const source = this.audioContext.createBufferSource();
+    source.buffer = buffer;
+
+    filter.type = 'lowpass';
+    filter.frequency.value = 800 + Math.random() * 400;
+
+    gainNode.gain.setValueAtTime(0.03 + Math.random() * 0.02, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+
+    source.connect(filter);
+    filter.connect(gainNode);
+    gainNode.connect(this.audioContext.destination);
+
+    source.start(now);
+    source.stop(now + 0.1);
+
+    // Siguiente crack en intervalo random
+    if (this.isPlaying) {
+      setTimeout(() => this.createCrackle(), 50 + Math.random() * 150);
+    }
+  }
+
+  stop() {
+    this.isPlaying = false;
+    if (this.audioContext) {
+      this.audioContext.close();
+      this.audioContext = null;
+    }
+  }
+
+  toggle() {
+    if (this.isPlaying) {
+      this.stop();
+      return false;
+    } else {
+      this.start();
+      return true;
+    }
+  }
+}
+
+let fireAmbience = null;
+
+// ============================================================
+// SONIDO DE FIRE (al dar like) - MEJORADO
 // ============================================================
 function playFireSound() {
   try {
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const duration = 0.15;
-    const sampleRate = audioContext.sampleRate;
-    const buffer = audioContext.createBuffer(1, sampleRate * duration, sampleRate);
-    const data = buffer.getChannelData(0);
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
     
-    for (let i = 0; i < buffer.length; i++) {
-      const decay = 1 - (i / buffer.length);
-      data[i] = (Math.random() * 2 - 1) * decay * 0.3;
-    }
+    // Sonido más satisfactorio tipo "pop" + fuego
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
     
-    const source = audioContext.createBufferSource();
-    source.buffer = buffer;
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(600, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + 0.15);
     
-    const filter = audioContext.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.value = 1000;
+    filter.frequency.value = 1500;
     
-    const gainNode = audioContext.createGain();
-    gainNode.gain.value = 0.2;
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
     
-    source.connect(filter);
-    filter.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    source.start();
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    
+    osc.start();
+    osc.stop(ctx.currentTime + 0.15);
+
+    // Agregar un poco de "crackle"
+    const buffer = ctx.createBuffer(1, ctx.sampleRate * 0.1, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < buffer.length; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / buffer.length, 3) * 0.3;
+    }
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.value = 0.1;
+    noise.connect(noiseGain);
+    noiseGain.connect(ctx.destination);
+    noise.start();
   } catch (e) {}
 }
 
 function playWhooshSound() {
   try {
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const duration = 0.3;
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
     
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(400, audioContext.currentTime);
-    oscillator.frequency.exponentialRampToValueAtTime(100, audioContext.currentTime + duration);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(500, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.4);
     
-    gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + duration);
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
     
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
     
-    oscillator.start();
-    oscillator.stop(audioContext.currentTime + duration);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.4);
   } catch (e) {}
 }
 
-// ============================================================
-// VIBRACIÓN
-// ============================================================
 function vibrar(pattern = 50) {
-  try {
-    if (navigator.vibrate) {
-      navigator.vibrate(pattern);
-    }
-  } catch (e) {}
+  try { navigator.vibrate && navigator.vibrate(pattern); } catch (e) {}
 }
 
 // ============================================================
-// DEVICE FINGERPRINT & ID
+// HELPERS
 // ============================================================
-function generateFingerprint() {
-  try {
-    const components = [
-      screen.width, screen.height, screen.colorDepth,
-      navigator.language, navigator.languages?.join(','),
-      Intl.DateTimeFormat().resolvedOptions().timeZone,
-      navigator.platform, navigator.hardwareConcurrency, navigator.maxTouchPoints,
-    ];
-    const raw = components.filter(Boolean).join('|');
-    let hash = 0;
-    for (let i = 0; i < raw.length; i++) {
-      hash = ((hash << 5) - hash) + raw.charCodeAt(i);
-      hash = hash & hash;
-    }
-    return 'fp_' + Math.abs(hash).toString(36);
-  } catch (e) {
-    return 'fp_unknown';
-  }
-}
-
 function getDeviceId() {
   if (typeof window === 'undefined') return 'server';
   let id = localStorage.getItem('fire_did') || sessionStorage.getItem('fire_did');
@@ -114,38 +190,45 @@ function getDeviceId() {
   return id;
 }
 
-// ============================================================
-// HELPERS
-// ============================================================
+function generateFingerprint() {
+  try {
+    const c = [screen.width, screen.height, screen.colorDepth, navigator.language, Intl.DateTimeFormat().resolvedOptions().timeZone, navigator.platform, navigator.hardwareConcurrency];
+    let h = 0;
+    const s = c.join('|');
+    for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h = h & h; }
+    return 'fp_' + Math.abs(h).toString(36);
+  } catch (e) { return 'fp_unknown'; }
+}
+
 function calcularDistanciaKm(lat1, lng1, lat2, lng2) {
   if (!lat1 || !lng1 || !lat2 || !lng2) return 999;
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-    Math.sin(dLng/2) * Math.sin(dLng/2);
+  const a = Math.sin(dLat/2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng/2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
 function timeAgo(dateString) {
-  const diffMs = Date.now() - new Date(dateString).getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return 'ahora';
-  if (diffMin < 60) return `hace ${diffMin}m`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `hace ${diffHr}h`;
-  return 'hace 1d';
+  const m = Math.floor((Date.now() - new Date(dateString).getTime()) / 60000);
+  if (m < 1) return 'ahora';
+  if (m < 60) return `hace ${m}m`;
+  const h = Math.floor(m / 60);
+  return h < 24 ? `hace ${h}h` : 'hace 1d';
 }
 
 function calcularQuemado(dateString) {
-  const diffMs = Date.now() - new Date(dateString).getTime();
-  return Math.min(diffMs / (1000 * 60 * 60 * 24), 1);
+  return Math.min((Date.now() - new Date(dateString).getTime()) / (1000 * 60 * 60 * 24), 1);
 }
 
 function validarTexto(texto) {
-  const regex = /^[a-zA-ZáéíóúüñÁÉÍÓÚÜÑàèìòùÀÈÌÒÙâêîôûÂÊÎÔÛäëïöüÄËÏÖÜçÇ\s.,;:!?¡¿'"()\-]+$/;
-  return regex.test(texto) && texto.trim().length > 0 && texto.length <= 200;
+  return /^[a-zA-ZáéíóúüñÁÉÍÓÚÜÑàèìòùÀÈÌÒÙâêîôûÂÊÎÔÛäëïöüÄËÏÖÜçÇ0-9\s.,;:!?¡¿'"()\-@#]+$/.test(texto) && texto.trim().length > 0 && texto.length <= 200;
+}
+
+function getColorForNote(id) {
+  // Color consistente basado en el ID de la nota
+  const hash = id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+  return COLORES_NOTAS[hash % COLORES_NOTAS.length];
 }
 
 // ============================================================
@@ -179,6 +262,7 @@ export default function FireNotesApp() {
 
   const [misReacciones, setMisReacciones] = useState(new Set());
   const [animandoNota, setAnimandoNota] = useState(false);
+  const [sonidoAmbiente, setSonidoAmbiente] = useState(false);
 
   const watchIdRef = useRef(null);
 
@@ -194,22 +278,22 @@ export default function FireNotesApp() {
     setDeviceId(id);
     setFingerprint(fp);
 
-    const yaVioOnboarding = localStorage.getItem('fire_onboarding');
+    fireAmbience = new FireAmbience();
+
+    const yaVioOnboarding = localStorage.getItem('fire_onboarding_v2');
     if (!yaVioOnboarding) {
       setMostrarOnboarding(true);
-      localStorage.setItem('fire_onboarding', 'true');
+      localStorage.setItem('fire_onboarding_v2', 'true');
     }
 
     if (navigator.geolocation) {
       setUbicacionStatus('obteniendo');
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          setUbicacion({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy });
+          setUbicacion({ lat: pos.coords.latitude, lng: pos.coords.longitude });
           setUbicacionStatus('ok');
         },
-        (err) => {
-          setUbicacionStatus(err.code === 1 ? 'denegado' : 'error');
-        },
+        (err) => setUbicacionStatus(err.code === 1 ? 'denegado' : 'error'),
         { enableHighAccuracy: true, timeout: 15000 }
       );
 
@@ -217,9 +301,8 @@ export default function FireNotesApp() {
         (pos) => {
           setUbicacion(prev => {
             if (prev?.lat && calcularDistanciaKm(prev.lat, prev.lng, pos.coords.latitude, pos.coords.longitude) * 1000 < 50) return prev;
-            return { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
+            return { lat: pos.coords.latitude, lng: pos.coords.longitude };
           });
-          setUbicacionStatus('ok');
         },
         () => {},
         { enableHighAccuracy: true, timeout: 30000, maximumAge: 60000 }
@@ -228,18 +311,28 @@ export default function FireNotesApp() {
       setUbicacionStatus('error');
     }
 
-    return () => { if (watchIdRef.current) navigator.geolocation.clearWatch(watchIdRef.current); };
+    return () => {
+      if (watchIdRef.current) navigator.geolocation.clearWatch(watchIdRef.current);
+      if (fireAmbience) fireAmbience.stop();
+    };
   }, []);
 
   useEffect(() => {
-    if (ubicacion?.lat && deviceId && fingerprint) cargarTodo();
-  }, [ubicacion, deviceId, fingerprint]);
+    if (ubicacion?.lat && deviceId) cargarTodo();
+  }, [ubicacion, deviceId]);
 
   useEffect(() => {
     if (!ubicacion?.lat || !deviceId) return;
     const interval = setInterval(cargarNotas, 30000);
     return () => clearInterval(interval);
   }, [ubicacion, deviceId]);
+
+  const toggleSonidoAmbiente = () => {
+    if (fireAmbience) {
+      const isOn = fireAmbience.toggle();
+      setSonidoAmbiente(isOn);
+    }
+  };
 
   // ============================================================
   // LOAD DATA
@@ -261,13 +354,8 @@ export default function FireNotesApp() {
         .order('created_at', { ascending: false })
         .limit(200);
 
-      const filtradas = (data || []).filter(n => {
-        const dist = calcularDistanciaKm(ubicacion.lat, ubicacion.lng, n.latitud, n.longitud);
-        return dist <= RADIO_KM;
-      }).map(n => ({
-        ...n,
-        distanciaMetros: Math.round(calcularDistanciaKm(ubicacion.lat, ubicacion.lng, n.latitud, n.longitud) * 1000)
-      }));
+      const filtradas = (data || []).filter(n => calcularDistanciaKm(ubicacion.lat, ubicacion.lng, n.latitud, n.longitud) <= RADIO_KM)
+        .map(n => ({ ...n, distanciaMetros: Math.round(calcularDistanciaKm(ubicacion.lat, ubicacion.lng, n.latitud, n.longitud) * 1000) }));
 
       setNotas(filtradas);
     } catch (e) {}
@@ -288,7 +376,6 @@ export default function FireNotesApp() {
         .gt('expires_at', new Date().toISOString())
         .or('eliminado.is.null,eliminado.eq.false')
         .order('created_at', { ascending: false });
-      
       setMisNotas(data || []);
     } catch (e) {}
   };
@@ -306,32 +393,19 @@ export default function FireNotesApp() {
   };
 
   // ============================================================
-  // PUBLICAR
+  // ACTIONS
   // ============================================================
   const publicar = async () => {
-    if (!ubicacion?.lat) {
-      setError('Necesitamos tu ubicación para publicar.');
-      return;
-    }
-    if (!puedeEscribir) {
-      setMostrarModal(true);
-      return;
-    }
-    if (!validarTexto(texto)) {
-      setError('Solo letras y puntuación básica. Máximo 200 caracteres.');
-      return;
-    }
+    if (!ubicacion?.lat) { setError('Necesitamos tu ubicación.'); return; }
+    if (!puedeEscribir) { setMostrarModal(true); return; }
+    if (!validarTexto(texto)) { setError('Solo letras, números y puntuación. Máx 200.'); return; }
 
     setEnviando(true);
     setError('');
 
     try {
       const { data, error: err } = await supabase.rpc('publicar_pensamiento', {
-        p_texto: texto.trim(),
-        p_lat: ubicacion.lat,
-        p_lng: ubicacion.lng,
-        p_device_id: deviceId,
-        p_fingerprint: fingerprint,
+        p_texto: texto.trim(), p_lat: ubicacion.lat, p_lng: ubicacion.lng, p_device_id: deviceId, p_fingerprint: fingerprint,
       });
 
       if (err || !data.ok) {
@@ -353,25 +427,17 @@ export default function FireNotesApp() {
       setTimeout(() => {
         setAnimandoNota(false);
         setMostrarExito(true);
-        setTimeout(() => {
-          setMostrarExito(false);
-          setPantalla('feed');
-        }, 1200);
+        setTimeout(() => { setMostrarExito(false); setPantalla('feed'); }, 1200);
       }, 500);
-
     } catch (e) {
-      setError('Error inesperado. Intenta de nuevo.');
+      setError('Error inesperado.');
     } finally {
       setEnviando(false);
     }
   };
 
-  // ============================================================
-  // TOGGLE FIRE
-  // ============================================================
   const hacerFire = async (notaId) => {
     const yaReaccione = misReacciones.has(notaId);
-
     playFireSound();
     vibrar(30);
 
@@ -381,9 +447,9 @@ export default function FireNotesApp() {
       return next;
     });
     
-    const updateNotas = (prev) => prev.map(n => n.id === notaId ? { ...n, fires: n.fires + (yaReaccione ? -1 : 1) } : n);
-    setNotas(updateNotas);
-    setMisNotas(updateNotas);
+    const update = (prev) => prev.map(n => n.id === notaId ? { ...n, fires: n.fires + (yaReaccione ? -1 : 1) } : n);
+    setNotas(update);
+    setMisNotas(update);
 
     try {
       const { data } = await supabase.rpc('toggle_fire', { p_pensamiento_id: notaId, p_device_id: deviceId });
@@ -392,28 +458,14 @@ export default function FireNotesApp() {
         setNotas(updateFires);
         setMisNotas(updateFires);
       }
-    } catch (e) {
-      setMisReacciones(prev => {
-        const next = new Set(prev);
-        yaReaccione ? next.add(notaId) : next.delete(notaId);
-        return next;
-      });
-    }
+    } catch (e) {}
   };
 
   const verVideo = async () => {
     try {
       const { data } = await supabase.rpc('ver_video', { p_device_id: deviceId, p_fingerprint: fingerprint });
-      if (data?.ok) {
-        setVideosVistos(data.videos);
-        setMostrarModal(false);
-        vibrar(50);
-      } else {
-        setError(data?.error || 'Error');
-      }
-    } catch (e) {
-      setError('Error al procesar video.');
-    }
+      if (data?.ok) { setVideosVistos(data.videos); setMostrarModal(false); vibrar(50); }
+    } catch (e) {}
   };
 
   const comprar = async (tipo) => {
@@ -423,9 +475,7 @@ export default function FireNotesApp() {
       else setExtrasComprados(prev => prev + 3);
       setMostrarModal(false);
       vibrar(50);
-    } catch (e) {
-      setError('Error al procesar compra.');
-    }
+    } catch (e) {}
   };
 
   const reportarNota = async (notaId) => {
@@ -434,15 +484,12 @@ export default function FireNotesApp() {
       if (data?.ok) {
         setMostrarReporte(null);
         vibrar(30);
-        alert(data.eliminado ? 'Nota eliminada por múltiples reportes.' : 'Nota reportada. Gracias.');
         if (data.eliminado) {
           setNotas(prev => prev.filter(n => n.id !== notaId));
           setMisNotas(prev => prev.filter(n => n.id !== notaId));
         }
       }
-    } catch (e) {
-      alert('Error al reportar. Intenta de nuevo.');
-    }
+    } catch (e) {}
   };
 
   // ============================================================
@@ -451,13 +498,11 @@ export default function FireNotesApp() {
   if (ubicacionStatus === 'denegado') {
     return (
       <div style={S.container}>
-        <div style={S.ubicacionError}>
+        <div style={S.centrado}>
           <span style={{ fontSize: '64px', marginBottom: '20px' }}>📍</span>
           <h2 style={{ color: '#FFD700', marginBottom: '12px' }}>FIRE NOTES necesita tu ubicación</h2>
-          <p style={{ color: '#AAA', marginBottom: '24px', lineHeight: '1.6' }}>
-            Las notas solo son visibles a 1km de ti.<br/>Sin ubicación, no podemos mostrarte nada.
-          </p>
-          <button onClick={() => window.location.reload()} style={{ ...S.soltarBtn, maxWidth: '200px' }}>Reintentar</button>
+          <p style={{ color: '#AAA', marginBottom: '24px', lineHeight: '1.6' }}>Las notas solo son visibles a 1km de ti.</p>
+          <button onClick={() => window.location.reload()} style={S.btnPrimario}>Reintentar</button>
         </div>
       </div>
     );
@@ -467,50 +512,45 @@ export default function FireNotesApp() {
     <div style={S.container}>
       {/* HEADER */}
       <header style={S.header}>
-        <button onClick={() => setMostrarInfo(true)} style={S.infoBtn}>?</button>
+        <button onClick={() => setMostrarInfo(true)} style={S.btnCirculo}>?</button>
         <div style={S.logoWrap}>
           <span style={{ fontSize: '28px' }}>🔥</span>
-          <div style={S.logoTextWrap}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
             <span style={S.logoFire}>FIRE</span>
             <span style={S.logoNotes}>NOTES</span>
           </div>
         </div>
-        <div style={S.contadorWrap}>
-          {tieneIlimitado ? (
-            <span style={S.contadorInfinito}>∞</span>
-          ) : (
-            <div style={S.contadorNotas}>
-              {[...Array(MAX_NOTAS_GRATIS)].map((_, i) => {
-                const restantes = totalDisponible - pensamientosUsados;
-                const disponible = i < restantes;
-                return (
-                  <span key={i} style={{
-                    fontSize: '18px', opacity: disponible ? 1 : 0.2,
-                    transition: 'all 0.4s ease', transform: disponible ? 'scale(1)' : 'scale(0.7)',
-                  }}>{disponible ? '📝' : '⬜'}</span>
-                );
-              })}
-              {(totalDisponible - pensamientosUsados) > MAX_NOTAS_GRATIS && (
-                <span style={S.contadorExtra}>+{(totalDisponible - pensamientosUsados) - MAX_NOTAS_GRATIS}</span>
-              )}
-            </div>
-          )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button onClick={toggleSonidoAmbiente} style={{ ...S.btnCirculo, fontSize: '14px', color: sonidoAmbiente ? '#FF6B35' : '#555' }}>
+            {sonidoAmbiente ? '🔊' : '🔇'}
+          </button>
+          <div style={S.contadorNotas}>
+            {tieneIlimitado ? <span style={S.infinito}>∞</span> : (
+              <>
+                {[...Array(MAX_NOTAS_GRATIS)].map((_, i) => {
+                  const restantes = totalDisponible - pensamientosUsados;
+                  return <span key={i} style={{ fontSize: '16px', opacity: i < restantes ? 1 : 0.2, transition: 'all 0.3s' }}>{i < restantes ? '📝' : '⬜'}</span>;
+                })}
+                {(totalDisponible - pensamientosUsados) > 3 && <span style={S.extra}>+{(totalDisponible - pensamientosUsados) - 3}</span>}
+              </>
+            )}
+          </div>
         </div>
       </header>
 
       {/* TABS */}
       {pantalla === 'feed' && (
         <div style={S.tabs}>
-          <button onClick={() => setTab('feed')} style={{ ...S.tab, ...(tab === 'feed' ? S.tabActive : {}) }}>🌍 Cerca de ti</button>
-          <button onClick={() => setTab('misNotas')} style={{ ...S.tab, ...(tab === 'misNotas' ? S.tabActive : {}) }}>📝 Tus notas ({misNotas.length})</button>
+          <button onClick={() => setTab('feed')} style={{ ...S.tab, ...(tab === 'feed' ? S.tabActivo : {}) }}>🌍 Cerca de ti</button>
+          <button onClick={() => setTab('misNotas')} style={{ ...S.tab, ...(tab === 'misNotas' ? S.tabActivo : {}) }}>📝 Tus notas ({misNotas.length})</button>
         </div>
       )}
 
       {/* ZONA */}
       {!cargando && pantalla === 'feed' && tab === 'feed' && (
-        <div style={S.zonaIndicador}>
+        <div style={S.zona}>
           {notas.length === 0 ? '❄️ Tu zona está fría - sé el primero' :
-           notas.length < 5 ? `🌡️ ${notas.length} nota${notas.length > 1 ? 's' : ''} cerca de ti` :
+           notas.length < 5 ? `🌡️ ${notas.length} nota${notas.length > 1 ? 's' : ''} cerca` :
            notas.length < 15 ? `🔥 ¡Zona activa! - ${notas.length} notas` :
            <span style={{ color: '#FF6B35' }}>🔥🔥🔥 ¡Zona caliente! - {notas.length} notas</span>}
         </div>
@@ -520,52 +560,66 @@ export default function FireNotesApp() {
       {pantalla === 'feed' && (
         <main style={S.feed}>
           {cargando ? (
-            <div style={S.empty}><div style={S.spinner}></div><p style={S.emptyText}>Buscando notas cerca de ti...</p></div>
+            <div style={S.centrado}><div style={S.spinner}></div><p style={{ color: '#666', marginTop: '12px' }}>Buscando notas...</p></div>
+          ) : (tab === 'feed' ? notas : misNotas).length === 0 ? (
+            <div style={S.centrado}>
+              <span style={{ fontSize: '48px' }}>🔥</span>
+              <p style={{ color: '#666', marginTop: '12px' }}>{tab === 'feed' ? 'No hay notas cerca' : 'No tienes notas activas'}</p>
+              <p style={{ color: '#444', fontSize: '14px' }}>{tab === 'feed' ? 'Sé el primero en soltar un pensamiento' : 'Desaparecen en 24 horas'}</p>
+            </div>
           ) : (
-            <>
-              {(tab === 'feed' ? notas : misNotas).length === 0 ? (
-                <div style={S.empty}>
-                  <span style={{ fontSize: '48px', marginBottom: '8px' }}>🔥</span>
-                  <p style={S.emptyText}>{tab === 'feed' ? 'No hay notas cerca de ti' : 'No tienes notas activas'}</p>
-                  <p style={S.emptySubtext}>{tab === 'feed' ? 'Sé el primero en soltar un pensamiento' : 'Tus notas desaparecen en 24 horas'}</p>
-                </div>
-              ) : (
-                <div style={S.notasGrid}>
-                  {(tab === 'feed' ? notas : misNotas).map(nota => {
-                    const quemado = calcularQuemado(nota.created_at);
-                    const estaArdiendo = nota.fires >= 10;
-                    const tieneReaccion = misReacciones.has(nota.id);
-                    return (
-                      <div key={nota.id} style={{
-                        ...S.nota, opacity: 1 - (quemado * 0.3),
-                        boxShadow: estaArdiendo ? '2px 4px 12px rgba(0,0,0,0.4), 0 0 20px rgba(255,107,53,0.4)' : '2px 4px 12px rgba(0,0,0,0.4)',
-                        border: estaArdiendo ? '2px solid rgba(255,107,53,0.5)' : 'none',
-                      }}>
-                        <div style={S.notaLines} />
-                        {quemado > 0.7 && <div style={S.notaQuemada} />}
-                        <p style={S.notaTexto}>{nota.texto}</p>
-                        <div style={S.notaFooter}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={S.notaTiempo}>{timeAgo(nota.created_at)}</span>
-                            {tab === 'feed' && <span style={{ fontSize: '10px', color: '#AAA' }}>({nota.distanciaMetros || 0}m)</span>}
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <button onClick={() => setMostrarReporte(nota.id)} style={S.reportBtn}>⚑</button>
-                            <button onClick={() => hacerFire(nota.id)} style={{
-                              ...S.fireBtn, transform: tieneReaccion ? 'scale(1.1)' : 'scale(1)',
-                              backgroundColor: tieneReaccion ? 'rgba(255,107,53,0.15)' : 'transparent',
-                            }}>
-                              <span style={{ animation: estaArdiendo ? 'flicker 0.5s infinite' : 'none' }}>🔥</span>
-                              <span style={{ marginLeft: '4px' }}>{nota.fires}</span>
-                            </button>
-                          </div>
-                        </div>
+            <div style={S.notasGrid}>
+              {(tab === 'feed' ? notas : misNotas).map((nota, index) => {
+                const color = getColorForNote(nota.id);
+                const quemado = calcularQuemado(nota.created_at);
+                const ardiendo = nota.fires >= 10;
+                const reaccionado = misReacciones.has(nota.id);
+
+                return (
+                  <div key={nota.id} style={{
+                    ...S.nota,
+                    backgroundColor: color.bg,
+                    boxShadow: ardiendo 
+                      ? `4px 6px 20px ${color.shadow}, 0 0 30px rgba(255,107,53,0.5)` 
+                      : `4px 6px 16px ${color.shadow}`,
+                    opacity: 1 - (quemado * 0.25),
+                    animation: `noteIn 0.4s ease ${index * 0.05}s both`,
+                    border: ardiendo ? '2px solid rgba(255,107,53,0.6)' : 'none',
+                  }}>
+                    {/* Esquina doblada */}
+                    <div style={S.esquinaDoblada}></div>
+                    
+                    {/* Pin decorativo */}
+                    <div style={S.pin}>📌</div>
+
+                    {/* Efecto quemado */}
+                    {quemado > 0.7 && <div style={S.efectoQuemado} />}
+
+                    {/* Texto */}
+                    <p style={S.notaTexto}>{nota.texto}</p>
+
+                    {/* Footer */}
+                    <div style={S.notaFooter}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={S.tiempo}>{timeAgo(nota.created_at)}</span>
+                        {tab === 'feed' && <span style={{ fontSize: '10px', color: '#999' }}>• {nota.distanciaMetros}m</span>}
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <button onClick={() => setMostrarReporte(nota.id)} style={S.btnReporte}>⚑</button>
+                        <button onClick={() => hacerFire(nota.id)} style={{
+                          ...S.btnFire,
+                          transform: reaccionado ? 'scale(1.15)' : 'scale(1)',
+                          background: reaccionado ? 'rgba(255,107,53,0.2)' : 'rgba(0,0,0,0.05)',
+                        }}>
+                          <span style={{ animation: ardiendo ? 'flicker 0.3s infinite' : 'none' }}>🔥</span>
+                          <span style={{ marginLeft: '4px', fontWeight: 'bold' }}>{nota.fires}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </main>
       )}
@@ -573,130 +627,124 @@ export default function FireNotesApp() {
       {/* ESCRIBIR */}
       {pantalla === 'escribir' && (
         <main style={S.escribir}>
-          <div style={{ ...S.papelEscribir, ...(animandoNota ? S.papelAnimando : {}) }}>
-            <div style={S.notaLines} />
+          <div style={{ ...S.papelEscribir, ...(animandoNota ? { animation: 'flyUp 0.5s ease-out forwards' } : {}) }}>
+            <div style={S.pin}>📌</div>
             <textarea value={texto} onChange={(e) => e.target.value.length <= 200 && setTexto(e.target.value)} placeholder="Suelta tu pensamiento..." style={S.textarea} autoFocus maxLength={200} />
-            <div style={S.charCount}><span style={{ color: texto.length > 180 ? '#E63946' : '#8B7355' }}>{texto.length}</span>/200</div>
+            <div style={S.contador}><span style={{ color: texto.length > 180 ? '#E63946' : '#999' }}>{texto.length}</span>/200</div>
           </div>
-          {error && <p style={S.errorText}>{error}</p>}
-          <button onClick={publicar} disabled={enviando || !texto.trim()} style={{ ...S.soltarBtn, opacity: enviando || !texto.trim() ? 0.5 : 1 }}>{enviando ? 'Soltando...' : '🔥 SOLTAR'}</button>
-          <button onClick={() => { setPantalla('feed'); setError(''); }} style={S.cancelBtn}>Cancelar</button>
-          {ubicacion && <p style={{ color: '#555', fontSize: '12px', textAlign: 'center', marginTop: '8px' }}>📍 Se publicará en tu ubicación actual</p>}
+          {error && <p style={{ color: '#E63946', textAlign: 'center' }}>{error}</p>}
+          <button onClick={publicar} disabled={enviando || !texto.trim()} style={{ ...S.btnPrimario, opacity: enviando || !texto.trim() ? 0.5 : 1 }}>
+            {enviando ? 'Soltando...' : '🔥 SOLTAR'}
+          </button>
+          <button onClick={() => { setPantalla('feed'); setError(''); }} style={S.btnSecundario}>Cancelar</button>
         </main>
       )}
 
       {/* FAB */}
-      {pantalla === 'feed' && (<button onClick={() => puedeEscribir ? setPantalla('escribir') : setMostrarModal(true)} style={S.fab}>✏️</button>)}
+      {pantalla === 'feed' && <button onClick={() => puedeEscribir ? setPantalla('escribir') : setMostrarModal(true)} style={S.fab}>✏️</button>}
 
       {/* TOAST */}
       {mostrarExito && <div style={S.toast}>🔥 ¡Nota soltada!</div>}
 
-      {/* MODAL: SIN NOTAS */}
+      {/* MODALS */}
       {mostrarModal && (
         <div style={S.overlay} onClick={() => setMostrarModal(false)}>
           <div style={S.modal} onClick={e => e.stopPropagation()}>
-            <h2 style={S.modalTitle}>Se acabaron tus notas 🔥</h2>
-            <p style={S.modalSub}>Consigue más para seguir soltando:</p>
+            <h2 style={S.modalTitulo}>Se acabaron tus notas 🔥</h2>
+            <p style={S.modalSub}>Consigue más:</p>
             {videosVistos < 3 && (
-              <button onClick={verVideo} style={S.modalOpt}>
-                <span style={S.modalOptIcon}>🎬</span>
-                <div><strong>Ver un video</strong><p style={S.modalOptDesc}>+1 nota gratis ({3 - videosVistos} restantes hoy)</p></div>
+              <button onClick={verVideo} style={S.modalOpcion}>
+                <span style={{ fontSize: '24px' }}>🎬</span>
+                <div><strong>Ver un video</strong><p style={{ color: '#888', fontSize: '13px', margin: '4px 0 0' }}>+1 nota ({3 - videosVistos} restantes)</p></div>
               </button>
             )}
-            <button onClick={() => comprar('extra3')} style={S.modalOpt}><span style={S.modalOptIcon}>🔥</span><div><strong>+3 pensamientos</strong><p style={S.modalOptDesc}>$9.99 MXN</p></div></button>
-            {!tieneIlimitado && (<button onClick={() => comprar('ilimitado')} style={S.modalOpt}><span style={S.modalOptIcon}>∞</span><div><strong>Ilimitado hoy</strong><p style={S.modalOptDesc}>$29.99 MXN</p></div></button>)}
-            <button onClick={() => setMostrarModal(false)} style={S.modalClose}>Cerrar</button>
+            <button onClick={() => comprar('extra3')} style={S.modalOpcion}>
+              <span style={{ fontSize: '24px' }}>🔥</span>
+              <div><strong>+3 notas</strong><p style={{ color: '#888', fontSize: '13px', margin: '4px 0 0' }}>$9.99 MXN</p></div>
+            </button>
+            {!tieneIlimitado && (
+              <button onClick={() => comprar('ilimitado')} style={S.modalOpcion}>
+                <span style={{ fontSize: '24px' }}>∞</span>
+                <div><strong>Ilimitado hoy</strong><p style={{ color: '#888', fontSize: '13px', margin: '4px 0 0' }}>$29.99 MXN</p></div>
+              </button>
+            )}
+            <button onClick={() => setMostrarModal(false)} style={S.btnSecundario}>Cerrar</button>
           </div>
         </div>
       )}
 
-      {/* MODAL: REPORTAR */}
       {mostrarReporte && (
         <div style={S.overlay} onClick={() => setMostrarReporte(null)}>
           <div style={S.modal} onClick={e => e.stopPropagation()}>
-            <h2 style={S.modalTitle}>⚑ Reportar nota</h2>
-            <p style={S.modalSub}>¿Esta nota viola las reglas?</p>
-            <button onClick={() => reportarNota(mostrarReporte)} style={S.reportConfirmBtn}>Sí, reportar</button>
-            <button onClick={() => setMostrarReporte(null)} style={S.modalClose}>Cancelar</button>
-            <p style={{ fontSize: '12px', color: '#555', textAlign: 'center', marginTop: '12px' }}>Si muchas personas reportan una nota, se oculta automáticamente.</p>
+            <h2 style={S.modalTitulo}>⚑ Reportar</h2>
+            <p style={S.modalSub}>¿Viola las reglas?</p>
+            <button onClick={() => reportarNota(mostrarReporte)} style={{ ...S.btnPrimario, background: '#E63946' }}>Sí, reportar</button>
+            <button onClick={() => setMostrarReporte(null)} style={S.btnSecundario}>Cancelar</button>
           </div>
         </div>
       )}
 
-      {/* MODAL: INFO */}
       {mostrarInfo && (
         <div style={S.overlay} onClick={() => setMostrarInfo(false)}>
           <div style={S.modal} onClick={e => e.stopPropagation()}>
-            <h2 style={S.modalTitle}>🔥 FIRE NOTES</h2>
-            <p style={{ textAlign: 'center', color: '#888', fontStyle: 'italic', marginBottom: '16px' }}>Pensamientos anónimos que flotan a 1km</p>
-            <div style={S.infoSection}>
-              <h3 style={S.infoSectionTitle}>✅ Lo que SÍ puedes hacer</h3>
-              <p style={S.infoRule}>Decir lo que piensas sin filtro</p>
-              <p style={S.infoRule}>Quejarte de lo que sea</p>
-              <p style={S.infoRule}>Confesar algo (sin nombres)</p>
-              <p style={S.infoRule}>Dar tu opinión honesta</p>
+            <h2 style={S.modalTitulo}>🔥 FIRE NOTES</h2>
+            <p style={{ textAlign: 'center', color: '#888', fontStyle: 'italic' }}>Pensamientos anónimos a 1km</p>
+            <div style={{ marginTop: '16px' }}>
+              <p style={S.regla}><span style={{ color: '#4CAF50' }}>✅</span> Decir lo que piensas</p>
+              <p style={S.regla}><span style={{ color: '#4CAF50' }}>✅</span> Quejarte de lo que sea</p>
+              <p style={S.regla}><span style={{ color: '#4CAF50' }}>✅</span> Confesar (sin nombres)</p>
+              <p style={S.regla}><span style={{ color: '#E63946' }}>❌</span> Amenazas con nombres</p>
+              <p style={S.regla}><span style={{ color: '#E63946' }}>❌</span> Contenido de menores</p>
+              <p style={S.regla}><span style={{ color: '#E63946' }}>❌</span> Acoso identificable</p>
             </div>
-            <div style={S.infoSection}>
-              <h3 style={{ ...S.infoSectionTitle, color: '#E63946' }}>❌ Lo que te BANEA</h3>
-              <p style={S.infoRule}>Amenazar a alguien con nombre</p>
-              <p style={S.infoRule}>Contenido de menores de edad</p>
-              <p style={S.infoRule}>Acosar a personas identificables</p>
+            <div style={S.aviso}>
+              <p style={{ fontWeight: 'bold', color: '#FFD700', textAlign: 'center' }}>⚠ Eres anónimo, no invisible</p>
+              <p style={{ fontSize: '12px', color: '#AAA', textAlign: 'center' }}>Actividad ilegal = cooperamos con autoridades</p>
             </div>
-            <div style={S.importantBox}>
-              <p style={{ fontWeight: 'bold', textAlign: 'center', color: '#FFD700' }}>⚠ IMPORTANTE ⚠</p>
-              <p style={{ textAlign: 'center', fontWeight: 'bold', color: '#FFF' }}>Eres anónimo, pero NO invisible.</p>
-              <p style={{ textAlign: 'center', fontSize: '13px', color: '#AAA' }}>Si haces algo ilegal, cooperamos con las autoridades.</p>
-            </div>
-            <div style={{ marginTop: '16px', textAlign: 'center' }}>
-              <button onClick={() => { setMostrarInfo(false); setMostrarTerminos(true); }} style={{ background: 'none', border: 'none', color: '#666', fontSize: '12px', textDecoration: 'underline', cursor: 'pointer' }}>Términos de uso y Privacidad</button>
-            </div>
-            <button onClick={() => setMostrarInfo(false)} style={S.modalClose}>Cerrar</button>
+            <button onClick={() => { setMostrarInfo(false); setMostrarTerminos(true); }} style={{ background: 'none', border: 'none', color: '#666', fontSize: '12px', textDecoration: 'underline', cursor: 'pointer', marginTop: '12px' }}>Términos y Privacidad</button>
+            <button onClick={() => setMostrarInfo(false)} style={S.btnSecundario}>Cerrar</button>
           </div>
         </div>
       )}
 
-      {/* MODAL: TÉRMINOS */}
       {mostrarTerminos && (
         <div style={S.overlay} onClick={() => setMostrarTerminos(false)}>
           <div style={{ ...S.modal, maxHeight: '80vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-            <h2 style={S.modalTitle}>Términos y Privacidad</h2>
-            <div style={S.legalText}>
-              <h3 style={S.legalTitle}>1. TÉRMINOS DE USO</h3>
-              <p>FIRE NOTES es una plataforma de expresión anónima. No requiere registro. Cada nota es visible solo para personas dentro de 1km y desaparece en 24 horas.</p>
-              <p><strong>Contenido prohibido:</strong> Amenazas, contenido de menores, incitación a violencia, acoso identificable, actividades ilegales.</p>
-              <p><strong>Consecuencias:</strong> 5+ reportes = nota eliminada. Actividad ilegal = cooperación con autoridades.</p>
-              <h3 style={{ ...S.legalTitle, marginTop: '20px' }}>2. PRIVACIDAD</h3>
-              <p><strong>Recopilamos:</strong> ID anónimo del dispositivo, ubicación aproximada, IP (prevención de abuso).</p>
-              <p><strong>NO recopilamos:</strong> Nombre, email, teléfono, fotos.</p>
-              <p><strong>Retención:</strong> Todo se elimina en 24 horas automáticamente.</p>
+            <h2 style={S.modalTitulo}>Términos</h2>
+            <div style={{ fontSize: '13px', color: '#AAA', lineHeight: '1.7' }}>
+              <p><strong style={{ color: '#FFD700' }}>USO:</strong> Plataforma anónima. Notas visibles a 1km, desaparecen en 24h.</p>
+              <p><strong style={{ color: '#FFD700' }}>PROHIBIDO:</strong> Amenazas, menores, violencia, acoso, ilegalidad.</p>
+              <p><strong style={{ color: '#FFD700' }}>PRIVACIDAD:</strong> Solo guardamos ID anónimo, ubicación aprox, IP. Nada personal.</p>
             </div>
-            <button onClick={() => setMostrarTerminos(false)} style={S.modalClose}>Cerrar</button>
+            <button onClick={() => setMostrarTerminos(false)} style={S.btnSecundario}>Cerrar</button>
           </div>
         </div>
       )}
 
-      {/* MODAL: ONBOARDING */}
       {mostrarOnboarding && (
         <div style={S.overlay}>
           <div style={S.modal}>
-            <h2 style={S.modalTitle}>¡Bienvenido a FIRE NOTES! 🔥</h2>
+            <h2 style={S.modalTitulo}>¡Bienvenido! 🔥</h2>
             <div style={{ padding: '16px 0' }}>
-              <p style={{ ...S.infoRule, borderBottom: 'none', padding: '12px 0' }}>📝 <strong>Escribe</strong> lo que piensas</p>
-              <p style={{ ...S.infoRule, borderBottom: 'none', padding: '12px 0' }}>📍 <strong>Solo ven</strong> personas a 1km de ti</p>
-              <p style={{ ...S.infoRule, borderBottom: 'none', padding: '12px 0' }}>⏰ <strong>Desaparece</strong> en 24 horas</p>
-              <p style={{ ...S.infoRule, borderBottom: 'none', padding: '12px 0' }}>🔥 <strong>Da fuego</strong> a lo que te gusta</p>
-              <p style={{ ...S.infoRule, borderBottom: 'none', padding: '12px 0' }}>👤 <strong>100% anónimo</strong> - sin registro</p>
+              <p style={S.regla}>📝 <strong>Escribe</strong> lo que piensas</p>
+              <p style={S.regla}>📍 <strong>Solo ven</strong> personas a 1km</p>
+              <p style={S.regla}>⏰ <strong>Desaparece</strong> en 24 horas</p>
+              <p style={S.regla}>🔥 <strong>Da fuego</strong> a lo que te gusta</p>
+              <p style={S.regla}>🔊 <strong>Activa el sonido</strong> ambiente</p>
             </div>
-            <button onClick={() => setMostrarOnboarding(false)} style={S.soltarBtn}>¡Entendido!</button>
+            <button onClick={() => setMostrarOnboarding(false)} style={S.btnPrimario}>¡Entendido!</button>
           </div>
         </div>
       )}
 
       <style jsx global>{`
         @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes flicker { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.8; transform: scale(1.1); } }
+        @keyframes flyUp { to { transform: translateY(-80px) scale(0.8) rotate(-5deg); opacity: 0; } }
+        @keyframes noteIn { from { opacity: 0; transform: translateY(20px) rotate(-2deg); } to { opacity: 1; transform: translateY(0) rotate(0); } }
         @keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(-10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
-        @keyframes flicker { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
-        @keyframes flyUp { 0% { transform: translateY(0) scale(1); opacity: 1; } 100% { transform: translateY(-100px) scale(0.8); opacity: 0; } }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: #000; }
       `}</style>
     </div>
   );
@@ -706,59 +754,57 @@ export default function FireNotesApp() {
 // STYLES
 // ============================================================
 const S = {
-  container: { minHeight: '100dvh', backgroundColor: '#000', color: '#FFF', fontFamily: "'Georgia', serif", maxWidth: '480px', margin: '0 auto', position: 'relative' },
-  ubicacionError: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100dvh', padding: '24px', textAlign: 'center' },
-  header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', position: 'sticky', top: 0, zIndex: 100, backgroundColor: '#000', borderBottom: '1px solid #1a1a1a' },
-  infoBtn: { width: '36px', height: '36px', borderRadius: '50%', border: '1px solid #333', background: 'transparent', color: '#888', fontSize: '16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  container: { minHeight: '100dvh', backgroundColor: '#0a0a0a', color: '#FFF', fontFamily: "'Segoe UI', system-ui, sans-serif", maxWidth: '480px', margin: '0 auto', position: 'relative' },
+  centrado: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', padding: '24px', textAlign: 'center' },
+  
+  header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', position: 'sticky', top: 0, zIndex: 100, backgroundColor: 'rgba(10,10,10,0.95)', backdropFilter: 'blur(10px)', borderBottom: '1px solid #1a1a1a' },
   logoWrap: { display: 'flex', alignItems: 'center', gap: '8px' },
-  logoTextWrap: { display: 'flex', alignItems: 'baseline', gap: '6px' },
-  logoFire: { fontSize: '24px', fontWeight: 'bold', background: 'linear-gradient(135deg, #FF6B35, #E63946)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '2px' },
-  logoNotes: { fontSize: '14px', fontWeight: 'normal', color: '#FFFFFF', letterSpacing: '1px', opacity: 0.9 },
-  contadorWrap: { display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '70px' },
-  contadorNotas: { display: 'flex', alignItems: 'center', gap: '2px' },
-  contadorExtra: { fontSize: '12px', color: '#FFD700', marginLeft: '4px', fontWeight: 'bold' },
-  contadorInfinito: { fontSize: '24px', fontWeight: 'bold', color: '#FFD700' },
+  logoFire: { fontSize: '22px', fontWeight: '800', background: 'linear-gradient(135deg, #FF6B35, #E63946)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '1px' },
+  logoNotes: { fontSize: '13px', color: '#FFF', opacity: 0.85, fontWeight: '500' },
+  
+  btnCirculo: { width: '36px', height: '36px', borderRadius: '50%', border: '1px solid #333', background: 'transparent', color: '#888', fontSize: '16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  contadorNotas: { display: 'flex', alignItems: 'center', gap: '3px' },
+  infinito: { fontSize: '22px', fontWeight: 'bold', color: '#FFD700' },
+  extra: { fontSize: '11px', color: '#FFD700', fontWeight: 'bold', marginLeft: '2px' },
+
   tabs: { display: 'flex', borderBottom: '1px solid #1a1a1a' },
   tab: { flex: 1, padding: '12px', background: 'transparent', border: 'none', color: '#666', fontSize: '14px', cursor: 'pointer', transition: 'all 0.2s' },
-  tabActive: { color: '#FF6B35', borderBottom: '2px solid #FF6B35', marginBottom: '-1px' },
-  zonaIndicador: { textAlign: 'center', padding: '10px 16px', fontSize: '13px', color: '#777', fontStyle: 'italic', backgroundColor: 'rgba(255,255,255,0.02)', borderBottom: '1px solid #1a1a1a' },
+  tabActivo: { color: '#FF6B35', borderBottom: '2px solid #FF6B35' },
+
+  zona: { textAlign: 'center', padding: '10px 16px', fontSize: '13px', color: '#777', fontStyle: 'italic', background: 'rgba(255,255,255,0.02)' },
+
   feed: { padding: '16px', paddingBottom: '100px', minHeight: 'calc(100dvh - 140px)' },
-  empty: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '50vh', gap: '12px' },
-  emptyText: { color: '#666', fontSize: '16px', fontStyle: 'italic', textAlign: 'center' },
-  emptySubtext: { color: '#444', fontSize: '14px', fontStyle: 'italic', textAlign: 'center' },
-  spinner: { width: '32px', height: '32px', border: '3px solid #222', borderTop: '3px solid #FF6B35', borderRadius: '50%', animation: 'spin 1s linear infinite' },
   notasGrid: { display: 'flex', flexDirection: 'column', gap: '16px' },
-  nota: { position: 'relative', backgroundColor: '#F5E6D3', borderRadius: '4px', padding: '20px', boxShadow: '2px 4px 12px rgba(0,0,0,0.4)', overflow: 'hidden', transition: 'all 0.3s ease' },
-  notaLines: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'repeating-linear-gradient(0deg, transparent, transparent 28px, rgba(0,0,0,0.03) 28px, rgba(0,0,0,0.03) 29px)', pointerEvents: 'none' },
-  notaQuemada: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(135deg, transparent 85%, rgba(139,69,19,0.2) 100%)', borderRadius: '4px', pointerEvents: 'none' },
-  notaTexto: { color: '#2D2A26', fontSize: '16px', fontStyle: 'italic', lineHeight: '1.6', position: 'relative', zIndex: 1, margin: 0, wordBreak: 'break-word' },
-  notaFooter: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px', position: 'relative', zIndex: 1 },
-  notaTiempo: { fontSize: '12px', color: '#8B7355' },
-  fireBtn: { background: 'transparent', border: 'none', fontSize: '16px', cursor: 'pointer', padding: '6px 10px', borderRadius: '12px', color: '#2D2A26', transition: 'all 0.2s', display: 'flex', alignItems: 'center' },
-  reportBtn: { background: 'transparent', border: 'none', fontSize: '14px', cursor: 'pointer', padding: '4px', color: '#8B7355', opacity: 0.4 },
-  escribir: { padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: '20px', minHeight: 'calc(100dvh - 70px)' },
-  papelEscribir: { position: 'relative', backgroundColor: '#F5E6D3', borderRadius: '4px', padding: '24px', minHeight: '200px', boxShadow: '2px 4px 12px rgba(0,0,0,0.4)', transition: 'all 0.5s ease' },
-  papelAnimando: { animation: 'flyUp 0.5s ease-out forwards' },
-  textarea: { width: '100%', minHeight: '150px', background: 'transparent', border: 'none', outline: 'none', color: '#2D2A26', fontSize: '18px', fontStyle: 'italic', fontFamily: "'Georgia', serif", lineHeight: '29px', resize: 'none', position: 'relative', zIndex: 1 },
-  charCount: { position: 'absolute', bottom: '8px', right: '12px', fontSize: '12px', color: '#8B7355', fontFamily: 'monospace', zIndex: 1 },
-  soltarBtn: { width: '100%', padding: '16px', border: 'none', borderRadius: '12px', background: 'linear-gradient(135deg, #FF6B35, #E63946)', color: '#FFF', fontSize: '18px', fontWeight: 'bold', fontFamily: "'Georgia', serif", letterSpacing: '2px', cursor: 'pointer', boxShadow: '0 0 20px rgba(230,57,70,0.4)', transition: 'all 0.2s' },
-  cancelBtn: { background: 'transparent', border: 'none', color: '#666', fontSize: '16px', cursor: 'pointer', padding: '8px' },
-  errorText: { color: '#E63946', fontSize: '14px', textAlign: 'center', margin: 0 },
-  fab: { position: 'fixed', bottom: '24px', right: '24px', width: '64px', height: '64px', borderRadius: '50%', border: 'none', background: 'linear-gradient(135deg, #FF6B35, #E63946)', fontSize: '26px', cursor: 'pointer', boxShadow: '0 4px 24px rgba(230,57,70,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99 },
-  toast: { position: 'fixed', top: '80px', left: '50%', transform: 'translateX(-50%)', backgroundColor: 'rgba(255,107,53,0.95)', color: '#FFF', padding: '12px 24px', borderRadius: '24px', fontSize: '16px', zIndex: 200, boxShadow: '0 4px 20px rgba(0,0,0,0.4)', animation: 'fadeIn 0.3s ease' },
+
+  nota: { position: 'relative', borderRadius: '3px', padding: '20px 18px 14px', transition: 'all 0.3s ease', transformOrigin: 'top left' },
+  esquinaDoblada: { position: 'absolute', top: 0, right: 0, width: '0', height: '0', borderStyle: 'solid', borderWidth: '0 25px 25px 0', borderColor: 'transparent rgba(0,0,0,0.1) transparent transparent' },
+  pin: { position: 'absolute', top: '-8px', left: '50%', transform: 'translateX(-50%)', fontSize: '16px', zIndex: 2 },
+  efectoQuemado: { position: 'absolute', bottom: 0, left: 0, right: 0, height: '30%', background: 'linear-gradient(to top, rgba(139,69,19,0.15), transparent)', borderRadius: '0 0 3px 3px', pointerEvents: 'none' },
+  notaTexto: { color: '#2D2A26', fontSize: '16px', fontFamily: "'Comic Sans MS', 'Chalkboard SE', cursive", lineHeight: '1.55', margin: '8px 0 12px', wordBreak: 'break-word', position: 'relative', zIndex: 1 },
+  notaFooter: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', zIndex: 1 },
+  tiempo: { fontSize: '11px', color: '#888' },
+  btnReporte: { background: 'none', border: 'none', fontSize: '14px', cursor: 'pointer', color: '#999', opacity: 0.5, padding: '4px' },
+  btnFire: { display: 'flex', alignItems: 'center', border: 'none', fontSize: '15px', cursor: 'pointer', padding: '6px 10px', borderRadius: '16px', color: '#333', transition: 'all 0.2s' },
+
+  escribir: { padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', minHeight: 'calc(100dvh - 70px)' },
+  papelEscribir: { position: 'relative', backgroundColor: '#FFF9C4', borderRadius: '3px', padding: '28px 20px 20px', minHeight: '200px', boxShadow: '4px 6px 20px rgba(255,235,59,0.3)' },
+  textarea: { width: '100%', minHeight: '150px', background: 'transparent', border: 'none', outline: 'none', color: '#2D2A26', fontSize: '18px', fontFamily: "'Comic Sans MS', 'Chalkboard SE', cursive", lineHeight: '1.5', resize: 'none' },
+  contador: { position: 'absolute', bottom: '8px', right: '12px', fontSize: '12px', color: '#999', fontFamily: 'monospace' },
+
+  btnPrimario: { width: '100%', padding: '16px', border: 'none', borderRadius: '12px', background: 'linear-gradient(135deg, #FF6B35, #E63946)', color: '#FFF', fontSize: '17px', fontWeight: '700', cursor: 'pointer', boxShadow: '0 4px 20px rgba(230,57,70,0.4)' },
+  btnSecundario: { width: '100%', padding: '12px', background: 'transparent', border: 'none', color: '#666', fontSize: '15px', cursor: 'pointer', marginTop: '8px' },
+
+  fab: { position: 'fixed', bottom: '24px', right: '24px', width: '60px', height: '60px', borderRadius: '50%', border: 'none', background: 'linear-gradient(135deg, #FF6B35, #E63946)', fontSize: '24px', cursor: 'pointer', boxShadow: '0 4px 24px rgba(230,57,70,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99 },
+  toast: { position: 'fixed', top: '80px', left: '50%', transform: 'translateX(-50%)', backgroundColor: 'rgba(255,107,53,0.95)', color: '#FFF', padding: '12px 24px', borderRadius: '24px', fontSize: '15px', zIndex: 200, boxShadow: '0 4px 20px rgba(0,0,0,0.3)', animation: 'fadeIn 0.3s ease' },
+
   overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 150, padding: '20px' },
-  modal: { backgroundColor: '#111', borderRadius: '16px', padding: '28px', maxWidth: '380px', width: '100%', border: '1px solid #222' },
-  modalTitle: { fontSize: '22px', fontWeight: 'bold', textAlign: 'center', color: '#FFD700', margin: '0 0 8px 0' },
-  modalSub: { fontSize: '14px', color: '#888', textAlign: 'center', marginBottom: '20px', fontStyle: 'italic' },
-  modalOpt: { width: '100%', display: 'flex', alignItems: 'center', gap: '16px', padding: '16px', borderRadius: '12px', border: '1px solid #333', background: '#1a1a1a', cursor: 'pointer', marginBottom: '12px', textAlign: 'left', color: '#FFF' },
-  modalOptIcon: { fontSize: '28px', flexShrink: 0 },
-  modalOptDesc: { fontSize: '13px', color: '#888', margin: '4px 0 0 0' },
-  modalClose: { width: '100%', padding: '12px', borderRadius: '8px', border: 'none', background: 'transparent', color: '#666', fontSize: '16px', cursor: 'pointer', marginTop: '8px' },
-  reportConfirmBtn: { width: '100%', padding: '14px', borderRadius: '12px', border: 'none', background: '#E63946', color: '#FFF', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', marginBottom: '8px' },
-  infoSection: { marginTop: '16px' },
-  infoSectionTitle: { fontSize: '14px', fontWeight: 'bold', color: '#4CAF50', marginBottom: '8px' },
-  infoRule: { color: '#CCC', fontSize: '14px', margin: 0, padding: '6px 0', borderBottom: '1px solid #1a1a1a' },
-  importantBox: { marginTop: '16px', padding: '16px', borderRadius: '8px', border: '2px solid #FFD700', backgroundColor: 'rgba(255,215,0,0.05)' },
-  legalText: { marginTop: '16px', fontSize: '13px', color: '#AAA', lineHeight: '1.7' },
-  legalTitle: { fontSize: '16px', color: '#FFD700', fontWeight: 'bold', marginBottom: '8px' },
+  modal: { backgroundColor: '#111', borderRadius: '16px', padding: '24px', maxWidth: '360px', width: '100%', border: '1px solid #222' },
+  modalTitulo: { fontSize: '20px', fontWeight: 'bold', textAlign: 'center', color: '#FFD700', margin: '0 0 8px' },
+  modalSub: { fontSize: '14px', color: '#888', textAlign: 'center', marginBottom: '16px' },
+  modalOpcion: { width: '100%', display: 'flex', alignItems: 'center', gap: '14px', padding: '14px', borderRadius: '12px', border: '1px solid #333', background: '#1a1a1a', cursor: 'pointer', marginBottom: '10px', textAlign: 'left', color: '#FFF' },
+
+  regla: { color: '#CCC', fontSize: '14px', padding: '8px 0', borderBottom: '1px solid #1a1a1a', margin: 0 },
+  aviso: { marginTop: '16px', padding: '14px', borderRadius: '8px', border: '1px solid #FFD700', background: 'rgba(255,215,0,0.05)' },
+
+  spinner: { width: '32px', height: '32px', border: '3px solid #222', borderTop: '3px solid #FF6B35', borderRadius: '50%', animation: 'spin 1s linear infinite' },
 };
