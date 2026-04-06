@@ -192,7 +192,6 @@ export default function FireApp() {
   const [mostrarInfo, setMostrarInfo] = useState(false);
   const [mostrarExito, setMostrarExito] = useState(false);
   const [mostrarReporte, setMostrarReporte] = useState(null);
-  const [mostrarTerminos, setMostrarTerminos] = useState(false);
   const [mostrarDebug, setMostrarDebug] = useState(false);
   const [mostrarBienvenida, setMostrarBienvenida] = useState(false);
 
@@ -470,7 +469,10 @@ export default function FireApp() {
   // ============================================================
   const hacerFire = async (notaId) => {
     const yaReaccione = misReacciones.has(notaId);
+    
+    console.log('🔥 Toggle fire:', { notaId, yaReaccione, deviceId });
 
+    // Actualización optimista
     setMisReacciones((prev) => {
       const next = new Set(prev);
       yaReaccione ? next.delete(notaId) : next.add(notaId);
@@ -484,23 +486,61 @@ export default function FireApp() {
     setMisNotas(updateFires);
 
     try {
-      const { data } = await supabase.rpc('toggle_fire', {
+      const { data, error } = await supabase.rpc('toggle_fire', {
         p_pensamiento_id: notaId,
         p_device_id: deviceId,
       });
+      
+      console.log('🔥 RPC Response:', { data, error });
+      
+      if (error) {
+        console.error('🔥 RPC Error:', error);
+        // Revertir cambio optimista
+        setMisReacciones((prev) => {
+          const next = new Set(prev);
+          yaReaccione ? next.add(notaId) : next.delete(notaId);
+          return next;
+        });
+        const revertFires = (notas) => notas.map((n) =>
+          n.id === notaId ? { ...n, fires: n.fires + (yaReaccione ? 1 : -1) } : n
+        );
+        setNotas(revertFires);
+        setMisNotas(revertFires);
+        return;
+      }
+      
       if (data && data.fires !== undefined) {
+        console.log('🔥 Sync fires to:', data.fires);
         const syncFires = (notas) => notas.map((n) => 
           n.id === notaId ? { ...n, fires: data.fires } : n
         );
         setNotas(syncFires);
         setMisNotas(syncFires);
+        
+        // Sincronizar el estado de reacción
+        setMisReacciones((prev) => {
+          const next = new Set(prev);
+          if (data.liked) {
+            next.add(notaId);
+          } else {
+            next.delete(notaId);
+          }
+          return next;
+        });
       }
     } catch (e) {
+      console.error('🔥 Catch error:', e);
+      // Revertir cambio optimista
       setMisReacciones((prev) => {
         const next = new Set(prev);
         yaReaccione ? next.add(notaId) : next.delete(notaId);
         return next;
       });
+      const revertFires = (notas) => notas.map((n) =>
+        n.id === notaId ? { ...n, fires: n.fires + (yaReaccione ? 1 : -1) } : n
+      );
+      setNotas(revertFires);
+      setMisNotas(revertFires);
     }
   };
 
@@ -967,6 +1007,16 @@ export default function FireApp() {
               </button>
             )}
 
+            {/* Métodos de pago */}
+            <div style={S.paymentMethods}>
+              <p style={S.paymentTitle}>Aceptamos</p>
+              <div style={S.paymentIcons}>
+                <span style={S.paymentIcon}>💳</span>
+                <span style={S.paymentIcon}>₿</span>
+              </div>
+              <p style={S.paymentText}>Tarjetas y Bitcoin</p>
+            </div>
+
             <button onClick={() => setMostrarModal(false)} style={S.btnTerciario}>
               Cerrar
             </button>
@@ -990,10 +1040,10 @@ export default function FireApp() {
         </div>
       )}
 
-      {/* Modal: Info - MEJORADO */}
+      {/* Modal: Info con IMPORTANTE y Términos integrados */}
       {mostrarInfo && (
         <div style={S.overlay} onClick={() => setMostrarInfo(false)}>
-          <div style={S.modal} onClick={(e) => e.stopPropagation()}>
+          <div style={{...S.modal, maxHeight: '85vh', overflowY: 'auto'}} onClick={(e) => e.stopPropagation()}>
             <div style={S.modalHeader}>
               <span style={{ fontSize: '36px' }}>🔥</span>
               <h2 style={S.modalTitle}>FIRE NOTES</h2>
@@ -1039,47 +1089,47 @@ export default function FireApp() {
               <p style={S.ruleText}>Amenazar con nombres, contenido de menores, cosas ilegales</p>
             </div>
 
-            <div style={S.warningBox}>
-              <p style={S.warningTitle}>⚠️ OJO</p>
-              <p style={S.warningText}>
-                Eres anónimo pero NO invisible. Si haces algo ilegal, cooperamos con autoridades.
+            {/* IMPORTANTE - antes decía OJO */}
+            <div style={S.importantBox}>
+              <p style={S.importantTitle}>⚠️ IMPORTANTE</p>
+              <p style={S.importantText}>
+                Eres anónimo pero <strong>NO invisible</strong>. Si haces algo ilegal, cooperamos con autoridades.
               </p>
             </div>
 
-            <button 
-              onClick={() => { setMostrarInfo(false); setMostrarTerminos(true); }}
-              style={S.linkBtn}
-            >
-              Ver términos y privacidad
-            </button>
+            {/* Términos y Privacidad integrados */}
+            <div style={S.termsSection}>
+              <p style={S.termsSectionTitle}>📜 TÉRMINOS Y PRIVACIDAD</p>
+              
+              <div style={S.termsContent}>
+                <p style={S.termsSubtitle}>Uso de FIRE</p>
+                <p style={S.termsText}>
+                  Plataforma de expresión anónima. Sin registro. Notas visibles solo a 1km. Todo desaparece en 24 horas.
+                </p>
+                
+                <p style={S.termsSubtitle}>Prohibido</p>
+                <p style={S.termsText}>
+                  Amenazas, contenido de menores, violencia, acoso, drogas/armas, actividades ilegales. 5+ reportes = nota eliminada.
+                </p>
+                
+                <p style={S.termsSubtitle}>Privacidad</p>
+                <p style={S.termsText}>
+                  <strong>Guardamos:</strong> ID anónimo, ubicación aproximada, IP (anti-abuso).<br/>
+                  <strong>NO guardamos:</strong> nombre, email, teléfono, fotos.<br/>
+                  <strong>Retención:</strong> 24h datos de notas, 30 días logs.
+                </p>
+                
+                <p style={S.termsSubtitle}>Autoridades</p>
+                <p style={S.termsText}>
+                  Ante requerimiento legal válido, proporcionamos IDs, IPs y contenido relacionado.
+                </p>
+              </div>
+              
+              <p style={S.termsUpdate}>Última actualización: Abril 2026</p>
+            </div>
 
             <button onClick={() => setMostrarInfo(false)} style={S.btnPrimario}>
               Entendido
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Términos */}
-      {mostrarTerminos && (
-        <div style={S.overlay} onClick={() => setMostrarTerminos(false)}>
-          <div style={{...S.modal, maxHeight: '80vh', overflowY: 'auto'}} onClick={(e) => e.stopPropagation()}>
-            <h2 style={S.modalTitle}>Términos y Privacidad</h2>
-            <div style={S.legalText}>
-              <h3 style={S.legalTitle}>1. TÉRMINOS DE USO</h3>
-              <p>FIRE es una plataforma de expresión anónima. No requiere registro. Cada nota es visible solo a 1km y desaparece en 24 horas.</p>
-              <p><strong>Prohibido:</strong> Amenazas, contenido de menores, violencia, acoso, drogas/armas, actividades ilegales.</p>
-              <p><strong>Consecuencias:</strong> 5+ reportes = nota eliminada. Actividad ilegal = cooperamos con autoridades.</p>
-              
-              <h3 style={{...S.legalTitle, marginTop: '16px'}}>2. PRIVACIDAD</h3>
-              <p><strong>Recopilamos:</strong> ID anónimo, coordenadas aproximadas, IP (anti-abuso), huella del navegador.</p>
-              <p><strong>NO recopilamos:</strong> nombre, email, teléfono, fotos.</p>
-              <p><strong>Retención:</strong> Todo se borra en 24h. Logs de uso: 30 días máx.</p>
-              <p><strong>Autoridades:</strong> Ante requerimiento legal válido, proporcionamos: IDs, IPs, timestamps, contenido relacionado.</p>
-              <p style={{ marginTop: '12px', color: COLORS.gray, fontStyle: 'italic' }}>Última actualización: Abril 2026</p>
-            </div>
-            <button onClick={() => setMostrarTerminos(false)} style={S.btnPrimario}>
-              Cerrar
             </button>
           </div>
         </div>
@@ -1814,7 +1864,96 @@ const S = {
     margin: '4px 0 0 0',
   },
   
-  // Legal
+  // IMPORTANTE box (antes era warning/ojo)
+  importantBox: {
+    backgroundColor: `${COLORS.gold}15`,
+    border: `2px solid ${COLORS.gold}50`,
+    borderRadius: '12px',
+    padding: '16px',
+    marginBottom: '16px',
+  },
+  importantTitle: {
+    fontSize: '14px',
+    fontWeight: '700',
+    color: COLORS.gold,
+    textAlign: 'center',
+    marginBottom: '8px',
+  },
+  importantText: {
+    fontSize: '13px',
+    color: COLORS.grayLight,
+    textAlign: 'center',
+    margin: 0,
+    lineHeight: '1.5',
+  },
+  
+  // Términos integrados
+  termsSection: {
+    backgroundColor: COLORS.bgCard,
+    borderRadius: '12px',
+    padding: '16px',
+    marginBottom: '16px',
+  },
+  termsSectionTitle: {
+    fontSize: '13px',
+    fontWeight: '600',
+    color: COLORS.purple,
+    textAlign: 'center',
+    marginBottom: '12px',
+  },
+  termsContent: {
+    fontSize: '11px',
+    color: COLORS.grayLight,
+    lineHeight: '1.6',
+  },
+  termsSubtitle: {
+    fontSize: '12px',
+    fontWeight: '600',
+    color: COLORS.white,
+    marginTop: '10px',
+    marginBottom: '4px',
+  },
+  termsText: {
+    margin: 0,
+    marginBottom: '8px',
+  },
+  termsUpdate: {
+    fontSize: '10px',
+    color: COLORS.gray,
+    textAlign: 'center',
+    fontStyle: 'italic',
+    marginTop: '12px',
+  },
+  
+  // Métodos de pago
+  paymentMethods: {
+    backgroundColor: COLORS.bgCard,
+    borderRadius: '12px',
+    padding: '14px',
+    marginBottom: '16px',
+    textAlign: 'center',
+  },
+  paymentTitle: {
+    fontSize: '11px',
+    color: COLORS.gray,
+    marginBottom: '8px',
+  },
+  paymentIcons: {
+    display: 'flex',
+    justifyContent: 'center',
+    gap: '16px',
+    marginBottom: '6px',
+  },
+  paymentIcon: {
+    fontSize: '24px',
+  },
+  paymentText: {
+    fontSize: '12px',
+    color: COLORS.grayLight,
+    fontWeight: '500',
+  },
+  
+  // Legal (backup)
   legalText: {
     marginTop: '16px',
     fontSize: '12px',
