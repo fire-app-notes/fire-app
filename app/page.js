@@ -18,6 +18,9 @@ const MAX_NOTAS_GRATIS = 3;
 const MAX_VIDEOS_DIA = 3;
 const COOLDOWN_SECONDS = 30;
 
+// Cloudflare Turnstile (CAPTCHA)
+const TURNSTILE_SITE_KEY = '0x4AAAAAAC1muhrmP2gp6FCG';
+
 // ============================================================
 // COLORES - PALETA FIRE NOTES
 // ============================================================
@@ -232,6 +235,11 @@ export default function FireApp() {
     mejor_nota_fires: 0,
     logros: []
   });
+  
+  // Turnstile CAPTCHA
+  const [turnstileToken, setTurnstileToken] = useState(null);
+  const [turnstileLoaded, setTurnstileLoaded] = useState(false);
+  const turnstileRef = useRef(null);
 
   // --- COMPUTED ---
   const totalDisponible = 3 + videosVistos + extrasComprados;
@@ -278,6 +286,17 @@ export default function FireApp() {
       .then(res => res.json())
       .then(data => setUserIp(data.ip))
       .catch(() => setUserIp(null));
+
+    // Cargar Turnstile CAPTCHA
+    if (!window.turnstile) {
+      const script = document.createElement('script');
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad';
+      script.async = true;
+      window.onTurnstileLoad = () => setTurnstileLoaded(true);
+      document.head.appendChild(script);
+    } else {
+      setTurnstileLoaded(true);
+    }
 
     // Check if first visit
     const hasVisited = localStorage.getItem('fire_visited');
@@ -339,6 +358,26 @@ export default function FireApp() {
     const interval = setInterval(cargarNotas, 30000);
     return () => clearInterval(interval);
   }, [ubicacion, deviceId]);
+
+  // Renderizar Turnstile cuando se va a escribir
+  useEffect(() => {
+    if (turnstileLoaded && pantalla === 'escribir' && turnstileRef.current && !turnstileToken) {
+      // Limpiar widget anterior si existe
+      turnstileRef.current.innerHTML = '';
+      
+      window.turnstile.render(turnstileRef.current, {
+        sitekey: TURNSTILE_SITE_KEY,
+        callback: (token) => {
+          console.log('✅ Turnstile token:', token.substring(0, 20) + '...');
+          setTurnstileToken(token);
+        },
+        'expired-callback': () => {
+          setTurnstileToken(null);
+        },
+        theme: 'dark',
+      });
+    }
+  }, [turnstileLoaded, pantalla, turnstileToken]);
 
   // ============================================================
   // LOAD DATA
@@ -465,6 +504,24 @@ export default function FireApp() {
   };
 
   // ============================================================
+  // VERIFICAR CAPTCHA (Turnstile)
+  // ============================================================
+  const verificarCaptcha = async (token) => {
+    try {
+      const response = await fetch('https://xjzoabsuzbqxkriamqed.supabase.co/functions/v1/verify-captcha', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+      const data = await response.json();
+      return data.success === true;
+    } catch (e) {
+      console.error('Error verificando CAPTCHA:', e);
+      return false;
+    }
+  };
+
+  // ============================================================
   // PUBLICAR
   // ============================================================
   const publicar = async () => {
@@ -481,11 +538,26 @@ export default function FireApp() {
       setError('Solo letras, números y puntuación básica. Máximo 200 caracteres.');
       return;
     }
+    
+    // Verificar CAPTCHA
+    if (!turnstileToken) {
+      setError('Completa la verificación de seguridad');
+      return;
+    }
 
     setEnviando(true);
     setError('');
 
     try {
+      // Primero verificar CAPTCHA con Cloudflare
+      const captchaOk = await verificarCaptcha(turnstileToken);
+      if (!captchaOk) {
+        setError('Error de verificación. Intenta de nuevo.');
+        setTurnstileToken(null);
+        setEnviando(false);
+        return;
+      }
+      
       const { data, error: err } = await supabase.rpc('publicar_pensamiento', {
         p_texto: texto.trim(),
         p_lat: ubicacion.lat,
@@ -519,6 +591,7 @@ export default function FireApp() {
       setNotas((prev) => [nuevaNota, ...prev]);
       setMisNotas((prev) => [nuevaNota, ...prev]);
       setTexto('');
+      setTurnstileToken(null); // Reset CAPTCHA para próxima nota
       setMostrarExito(true);
       setTimeout(() => { setMostrarExito(false); setPantalla('feed'); }, 1500);
     } catch (e) {
@@ -1237,16 +1310,32 @@ export default function FireApp() {
             </p>
           )}
 
+          {/* Turnstile CAPTCHA */}
+          <div 
+            ref={turnstileRef} 
+            style={{ 
+              margin: '16px 0', 
+              minHeight: '65px',
+              display: 'flex',
+              justifyContent: 'center',
+            }}
+          />
+          {turnstileToken && (
+            <p style={{ color: COLORS.success, fontSize: '12px', textAlign: 'center', marginBottom: '12px' }}>
+              ✓ Verificación completada
+            </p>
+          )}
+
           <button
             onClick={publicar}
-            disabled={enviando || !texto.trim() || cooldownActivo}
+            disabled={enviando || !texto.trim() || cooldownActivo || !turnstileToken}
             style={{ 
               ...S.btnPrimario, 
-              opacity: (enviando || !texto.trim() || cooldownActivo) ? 0.5 : 1,
-              cursor: (enviando || !texto.trim() || cooldownActivo) ? 'not-allowed' : 'pointer',
+              opacity: (enviando || !texto.trim() || cooldownActivo || !turnstileToken) ? 0.5 : 1,
+              cursor: (enviando || !texto.trim() || cooldownActivo || !turnstileToken) ? 'not-allowed' : 'pointer',
             }}
           >
-            {enviando ? 'Soltando...' : cooldownActivo ? `Espera ${cooldownRestante}s` : '🔥 SOLTAR'}
+            {enviando ? 'Soltando...' : cooldownActivo ? `Espera ${cooldownRestante}s` : !turnstileToken ? '🔒 Verificando...' : '🔥 SOLTAR'}
           </button>
 
           <button onClick={() => { setPantalla('feed'); setError(''); }} style={S.btnSecundario}>
