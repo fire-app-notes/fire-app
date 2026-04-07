@@ -565,15 +565,14 @@ export default function FireApp() {
         body: JSON.stringify({ texto }),
       });
       
-      // [FIX-7] Si el servidor no responde OK, dejar pasar (la edge function necesita fix)
+      // Moderación FAIL-CLOSED: si falla, no se publica
       if (!response.ok) {
-        return { permitido: true };
+        return { permitido: false, razon: 'Error de moderación. Intenta de nuevo.' };
       }
       const data = await response.json();
       return data;
     } catch (e) {
-      // Si la moderación falla, permitir (evitar bloquear toda la app)
-      return { permitido: true };
+      return { permitido: false, razon: 'No se pudo verificar el contenido. Intenta de nuevo.' };
     }
   };
 
