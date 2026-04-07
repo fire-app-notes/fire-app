@@ -148,10 +148,31 @@ function tiempoRestante(expiresAt) {
   return `${diffMin}m`;
 }
 
-function calcularQuemado(dateString) {
-  const diffMs = Date.now() - new Date(dateString).getTime();
-  const horasVivida = diffMs / (1000 * 60 * 60);
-  return Math.min(horasVivida / 24, 1);
+function calcularQuemado(createdAt, expiresAt) {
+  const ahora = Date.now();
+  const creado = new Date(createdAt).getTime();
+  const expira = expiresAt ? new Date(expiresAt).getTime() : creado + (24 * 60 * 60 * 1000);
+  const vidaTotal = expira - creado;
+  const vidaTranscurrida = ahora - creado;
+  return Math.min(Math.max(vidaTranscurrida / vidaTotal, 0), 1);
+}
+
+// Nivel de fuego visual (0-3) basado en qué tan cerca está de expirar
+function getNivelFuego(quemado) {
+  if (quemado >= 0.92) return 3;  // 🔥🔥🔥 Últimas ~2 horas - ARDIENDO
+  if (quemado >= 0.75) return 2;  // 🔥🔥 Últimas ~6 horas - CALIENTE  
+  if (quemado >= 0.5) return 1;   // 🔥 Más de 12 horas - TIBIO
+  return 0; // Nueva, sin efecto
+}
+
+// Calcular tiempo restante formateado
+function tiempoRestanteCorto(expiresAt) {
+  const diffMs = new Date(expiresAt).getTime() - Date.now();
+  if (diffMs <= 0) return '💨';
+  const diffMin = Math.floor(diffMs / (1000 * 60));
+  if (diffMin < 60) return `${diffMin}m`;
+  const diffHr = Math.floor(diffMin / 60);
+  return `${diffHr}h`;
 }
 
 function validarTexto(texto) {
@@ -197,6 +218,9 @@ export default function FireApp() {
 
   // Reactions
   const [misReacciones, setMisReacciones] = useState(new Set());
+  
+  // Mapa de calor - puntos de actividad cercana
+  const [puntosCalor, setPuntosCalor] = useState([]);
 
   // --- COMPUTED ---
   const totalDisponible = tieneIlimitado ? 999 : 3 + videosVistos + extrasComprados;
@@ -691,6 +715,13 @@ export default function FireApp() {
           Cerca de ti
         </button>
         <button 
+          onClick={() => setPantalla('mapa')} 
+          style={{...S.tab, ...(pantalla === 'mapa' ? S.tabActive : {})}}
+        >
+          <span style={{ marginRight: '6px' }}>🗺️</span>
+          Mapa
+        </button>
+        <button 
           onClick={() => { cargarMisNotas(); setPantalla('misnotas'); }} 
           style={{...S.tab, ...(pantalla === 'misnotas' ? S.tabActive : {})}}
         >
@@ -752,24 +783,56 @@ export default function FireApp() {
           ) : (
             <div style={S.notasGrid}>
               {notas.map((nota) => {
-                const quemado = calcularQuemado(nota.created_at);
+                const quemado = calcularQuemado(nota.created_at, nota.expires_at);
+                const nivelFuego = getNivelFuego(quemado);
                 const estaArdiendo = nota.fires >= 10;
                 const tieneReaccion = misReacciones.has(nota.id);
+                const esMia = nota.device_id === deviceId;
+                
+                // Estilos dinámicos según qué tan quemada está
+                const estiloQuemado = {
+                  opacity: nivelFuego >= 3 ? 0.85 : nivelFuego >= 2 ? 0.9 : 1 - (quemado * 0.15),
+                  boxShadow: nivelFuego >= 2 
+                    ? '0 0 20px rgba(255, 107, 53, 0.5), 0 0 40px rgba(255, 69, 0, 0.3)'
+                    : estaArdiendo 
+                      ? '0 4px 20px rgba(255, 107, 53, 0.3)'
+                      : '0 2px 12px rgba(0,0,0,0.3)',
+                  border: nivelFuego >= 2 ? '2px solid #FF6B35' : 'none',
+                  animation: nivelFuego >= 3 ? 'burning 1.5s ease-in-out infinite' : 'none',
+                };
                 
                 return (
                   <div key={nota.id} style={{
                     ...S.nota,
-                    opacity: 1 - (quemado * 0.25),
-                    boxShadow: estaArdiendo 
-                      ? `0 4px 20px rgba(255, 107, 53, 0.3), 0 0 30px rgba(255, 107, 53, 0.2)`
-                      : '0 2px 12px rgba(0,0,0,0.3)',
+                    ...estiloQuemado,
                   }}>
                     <div style={S.notaLines} />
-                    {estaArdiendo && <div style={S.notaHot}>🔥</div>}
+                    
+                    {/* Indicador de quemándose */}
+                    {nivelFuego >= 2 && (
+                      <div style={S.burningIndicator}>
+                        {nivelFuego >= 3 ? '🔥🔥🔥' : '🔥🔥'}
+                      </div>
+                    )}
+                    
+                    {/* Badge de tu nota */}
+                    {esMia && <div style={S.tuNotaBadgeFeed}>Tu nota</div>}
+                    
+                    {/* Indicador de nota popular */}
+                    {estaArdiendo && nivelFuego < 2 && <div style={S.notaHot}>🔥</div>}
+                    
                     <p style={S.notaTexto}>{nota.texto}</p>
+                    
                     <div style={S.notaFooter}>
                       <div style={S.notaMeta}>
-                        <span style={S.notaTiempo}>{timeAgo(nota.created_at)}</span>
+                        <span style={{
+                          ...S.notaTiempo,
+                          color: nivelFuego >= 2 ? '#FF6B35' : '#8B7355',
+                          fontWeight: nivelFuego >= 2 ? '600' : '500',
+                        }}>
+                          {timeAgo(nota.created_at)}
+                          {nivelFuego >= 2 && ` · ${tiempoRestanteCorto(nota.expires_at)} 💨`}
+                        </span>
                         <span style={S.notaDistancia}>{nota.distanciaMetros}m</span>
                       </div>
                       <div style={S.notaActions}>
@@ -802,6 +865,116 @@ export default function FireApp() {
         </main>
       )}
 
+      {/* ===== MAPA DE CALOR ===== */}
+      {pantalla === 'mapa' && (
+        <main style={S.mapaContainer}>
+          <div style={S.mapaHeader}>
+            <h3 style={S.mapaTitle}>🗺️ Mapa de Actividad</h3>
+            <p style={S.mapaSubtitle}>Notas en tu zona (1km de radio)</p>
+          </div>
+          
+          {/* Mini mapa visual */}
+          <div style={S.mapaVisual}>
+            <div style={S.mapaCirculo}>
+              {/* Centro - Tu ubicación */}
+              <div style={S.mapaCentro}>📍</div>
+              
+              {/* Puntos de notas */}
+              {notas.map((nota, idx) => {
+                const distancia = nota.distanciaMetros || 500;
+                const angulo = (idx * 137.5) % 360; // Distribución de girasol
+                const radio = (distancia / 1000) * 45; // 45% del radio máximo
+                const x = 50 + radio * Math.cos(angulo * Math.PI / 180);
+                const y = 50 + radio * Math.sin(angulo * Math.PI / 180);
+                const quemado = calcularQuemado(nota.created_at, nota.expires_at);
+                const nivelFuego = getNivelFuego(quemado);
+                const size = nota.fires >= 10 ? 16 : nota.fires >= 5 ? 14 : 12;
+                
+                return (
+                  <div
+                    key={nota.id}
+                    style={{
+                      position: 'absolute',
+                      left: `${x}%`,
+                      top: `${y}%`,
+                      transform: 'translate(-50%, -50%)',
+                      fontSize: `${size}px`,
+                      opacity: nivelFuego >= 2 ? 1 : 0.8,
+                      animation: nivelFuego >= 3 ? 'pulse 1s ease infinite' : 'none',
+                      cursor: 'pointer',
+                      zIndex: nota.fires + 1,
+                    }}
+                    title={`${nota.fires} 🔥 · ${nota.distanciaMetros}m`}
+                  >
+                    {nota.fires >= 10 ? '🔥' : nota.fires >= 5 ? '🧡' : '💭'}
+                  </div>
+                );
+              })}
+              
+              {/* Círculos de distancia */}
+              <div style={S.mapaCircle500}></div>
+              <div style={S.mapaCircle1000}></div>
+            </div>
+            
+            {/* Leyenda */}
+            <div style={S.mapaLeyenda}>
+              <span>💭 nota</span>
+              <span>🧡 5+ 🔥</span>
+              <span>🔥 10+ 🔥</span>
+            </div>
+          </div>
+          
+          {/* Estadísticas */}
+          <div style={S.mapaStats}>
+            <div style={S.mapaStatItem}>
+              <span style={S.mapaStatNumber}>{notas.length}</span>
+              <span style={S.mapaStatLabel}>notas cerca</span>
+            </div>
+            <div style={S.mapaStatItem}>
+              <span style={S.mapaStatNumber}>
+                {notas.filter(n => n.fires >= 5).length}
+              </span>
+              <span style={S.mapaStatLabel}>activas</span>
+            </div>
+            <div style={S.mapaStatItem}>
+              <span style={S.mapaStatNumber}>
+                {notas.reduce((sum, n) => sum + n.fires, 0)}
+              </span>
+              <span style={S.mapaStatLabel}>🔥 total</span>
+            </div>
+          </div>
+          
+          {/* Zona info */}
+          <div style={S.mapaZonaInfo}>
+            {notas.length === 0 ? (
+              <>
+                <span style={{ fontSize: '32px', marginBottom: '8px' }}>❄️</span>
+                <p style={S.mapaZonaText}>Tu zona está fría</p>
+                <p style={S.mapaZonaSubtext}>Sé el primero en soltar un pensamiento</p>
+              </>
+            ) : notas.length < 5 ? (
+              <>
+                <span style={{ fontSize: '32px', marginBottom: '8px' }}>🌡️</span>
+                <p style={S.mapaZonaText}>Zona tibia</p>
+                <p style={S.mapaZonaSubtext}>Hay algo de actividad por aquí</p>
+              </>
+            ) : notas.length < 15 ? (
+              <>
+                <span style={{ fontSize: '32px', marginBottom: '8px' }}>🔥</span>
+                <p style={S.mapaZonaText}>¡Zona activa!</p>
+                <p style={S.mapaZonaSubtext}>Mucha gente soltando pensamientos</p>
+              </>
+            ) : (
+              <>
+                <span style={{ fontSize: '32px', marginBottom: '8px' }}>🌋</span>
+                <p style={{...S.mapaZonaText, color: COLORS.orange}}>¡ZONA EN LLAMAS!</p>
+                <p style={S.mapaZonaSubtext}>Esta zona está explotando</p>
+              </>
+            )}
+          </div>
+        </main>
+      )}
+
       {/* ===== MIS NOTAS ===== */}
       {pantalla === 'misnotas' && (
         <main style={S.feed}>
@@ -825,23 +998,52 @@ export default function FireApp() {
           ) : (
             <div style={S.notasGrid}>
               {misNotas.map((nota) => {
-                const quemado = calcularQuemado(nota.created_at);
+                const quemado = calcularQuemado(nota.created_at, nota.expires_at);
+                const nivelFuego = getNivelFuego(quemado);
                 const estaArdiendo = nota.fires >= 10;
+                
+                // Estilos dinámicos según qué tan quemada está
+                const estiloQuemado = {
+                  opacity: nivelFuego >= 3 ? 0.85 : nivelFuego >= 2 ? 0.9 : 1,
+                  boxShadow: nivelFuego >= 2 
+                    ? '0 0 20px rgba(255, 107, 53, 0.5), 0 0 40px rgba(255, 69, 0, 0.3)'
+                    : estaArdiendo 
+                      ? '0 4px 20px rgba(255, 107, 53, 0.3)'
+                      : '0 2px 12px rgba(0,0,0,0.3)',
+                  border: nivelFuego >= 2 ? '2px solid #FF6B35' : `2px solid ${COLORS.purple}40`,
+                  animation: nivelFuego >= 3 ? 'burning 1.5s ease-in-out infinite' : 'none',
+                };
                 
                 return (
                   <div key={nota.id} style={{
                     ...S.nota,
-                    ...S.miNota,
-                    opacity: 1 - (quemado * 0.2),
+                    ...estiloQuemado,
                   }}>
                     <div style={S.notaLines} />
+                    
+                    {/* Indicador de quemándose */}
+                    {nivelFuego >= 2 && (
+                      <div style={S.burningIndicator}>
+                        {nivelFuego >= 3 ? '🔥🔥🔥 EXPIRANDO' : '🔥🔥'}
+                      </div>
+                    )}
+                    
                     <div style={S.tuNotaBadge}>Tu nota</div>
                     <p style={S.notaTexto}>{nota.texto}</p>
                     <div style={S.notaFooter}>
                       <div style={S.notaMetaCol}>
-                        <span style={S.notaTiempo}>{timeAgo(nota.created_at)}</span>
-                        <span style={S.notaExpira}>
-                          ⏱ {tiempoRestante(nota.expires_at)}
+                        <span style={{
+                          ...S.notaTiempo,
+                          color: nivelFuego >= 2 ? '#FF6B35' : '#8B7355',
+                        }}>
+                          {timeAgo(nota.created_at)}
+                        </span>
+                        <span style={{
+                          ...S.notaExpira,
+                          color: nivelFuego >= 2 ? '#FF6B35' : COLORS.gray,
+                          fontWeight: nivelFuego >= 2 ? '600' : '400',
+                        }}>
+                          ⏱ {tiempoRestante(nota.expires_at)} {nivelFuego >= 2 && '💨'}
                         </span>
                       </div>
                       <div style={{
@@ -1168,6 +1370,22 @@ export default function FireApp() {
         @keyframes glow {
           0%, 100% { box-shadow: 0 0 20px rgba(155, 89, 182, 0.3); }
           50% { box-shadow: 0 0 30px rgba(155, 89, 182, 0.5); }
+        }
+        
+        @keyframes burning {
+          0%, 100% { 
+            box-shadow: 0 0 20px rgba(255, 107, 53, 0.5), 0 0 40px rgba(255, 69, 0, 0.3);
+            transform: scale(1);
+          }
+          50% { 
+            box-shadow: 0 0 30px rgba(255, 107, 53, 0.7), 0 0 60px rgba(255, 69, 0, 0.5);
+            transform: scale(1.01);
+          }
+        }
+        
+        @keyframes flicker {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.85; }
         }
       `}</style>
     </div>
@@ -1965,5 +2183,158 @@ const S = {
     color: COLORS.gold,
     fontWeight: '600',
     marginBottom: '8px',
+  },
+  
+  // ============================================================
+  // EFECTO QUEMÁNDOSE
+  // ============================================================
+  burningIndicator: {
+    position: 'absolute',
+    top: '-12px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    fontSize: '12px',
+    backgroundColor: COLORS.orange,
+    color: COLORS.white,
+    padding: '2px 10px',
+    borderRadius: '10px',
+    fontWeight: '600',
+    zIndex: 10,
+    whiteSpace: 'nowrap',
+    boxShadow: '0 2px 8px rgba(255, 107, 53, 0.4)',
+  },
+  tuNotaBadgeFeed: {
+    position: 'absolute',
+    top: '8px',
+    right: '8px',
+    backgroundColor: COLORS.purple,
+    color: COLORS.white,
+    fontSize: '10px',
+    fontWeight: '600',
+    padding: '3px 8px',
+    borderRadius: '8px',
+    zIndex: 5,
+  },
+  
+  // ============================================================
+  // MAPA DE CALOR
+  // ============================================================
+  mapaContainer: {
+    padding: '20px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '20px',
+    minHeight: 'calc(100dvh - 160px)',
+  },
+  mapaHeader: {
+    textAlign: 'center',
+  },
+  mapaTitle: {
+    fontSize: '20px',
+    fontWeight: '700',
+    color: COLORS.white,
+    margin: 0,
+    fontFamily: "'Space Grotesk', sans-serif",
+  },
+  mapaSubtitle: {
+    fontSize: '13px',
+    color: COLORS.gray,
+    marginTop: '4px',
+  },
+  mapaVisual: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '16px',
+  },
+  mapaCirculo: {
+    position: 'relative',
+    width: '280px',
+    height: '280px',
+    borderRadius: '50%',
+    backgroundColor: COLORS.bgCard,
+    border: `2px solid ${COLORS.purple}40`,
+    boxShadow: '0 4px 20px rgba(155, 89, 182, 0.2)',
+  },
+  mapaCentro: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    fontSize: '24px',
+    zIndex: 10,
+  },
+  mapaCircle500: {
+    position: 'absolute',
+    top: '25%',
+    left: '25%',
+    width: '50%',
+    height: '50%',
+    borderRadius: '50%',
+    border: `1px dashed ${COLORS.gray}40`,
+    pointerEvents: 'none',
+  },
+  mapaCircle1000: {
+    position: 'absolute',
+    top: '5%',
+    left: '5%',
+    width: '90%',
+    height: '90%',
+    borderRadius: '50%',
+    border: `1px dashed ${COLORS.gray}30`,
+    pointerEvents: 'none',
+  },
+  mapaLeyenda: {
+    display: 'flex',
+    justifyContent: 'center',
+    gap: '16px',
+    fontSize: '12px',
+    color: COLORS.gray,
+  },
+  mapaStats: {
+    display: 'flex',
+    justifyContent: 'space-around',
+    padding: '16px',
+    backgroundColor: COLORS.bgCard,
+    borderRadius: '16px',
+  },
+  mapaStatItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '4px',
+  },
+  mapaStatNumber: {
+    fontSize: '24px',
+    fontWeight: '700',
+    color: COLORS.white,
+    fontFamily: "'Space Grotesk', sans-serif",
+  },
+  mapaStatLabel: {
+    fontSize: '11px',
+    color: COLORS.gray,
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+  },
+  mapaZonaInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    padding: '24px',
+    backgroundColor: COLORS.bgSecondary,
+    borderRadius: '16px',
+    border: `1px solid ${COLORS.bgCard}`,
+  },
+  mapaZonaText: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: COLORS.white,
+    margin: 0,
+    fontFamily: "'Space Grotesk', sans-serif",
+  },
+  mapaZonaSubtext: {
+    fontSize: '13px',
+    color: COLORS.gray,
+    marginTop: '4px',
   },
 };
