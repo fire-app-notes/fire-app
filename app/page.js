@@ -520,11 +520,7 @@ export default function FireApp() {
   // VERIFICAR CAPTCHA (Turnstile)
   // ============================================================
   const verificarCaptcha = async (token) => {
-    // Si es bypass por error, permitir
-    if (token === 'bypass-on-error') {
-      console.log('⚠️ Bypass CAPTCHA por error');
-      return true;
-    }
+    if (token === 'bypass-on-error') return true;
     
     try {
       const response = await fetch('https://xjzoabsuzbqxkriamqed.supabase.co/functions/v1/verify-captcha', {
@@ -533,16 +529,31 @@ export default function FireApp() {
         body: JSON.stringify({ token }),
       });
       
-      if (!response.ok) {
-        console.log('⚠️ Edge function error, permitiendo...');
-        return true; // Permitir si hay error del servidor
-      }
-      
+      if (!response.ok) return true;
       const data = await response.json();
       return data.success === true;
     } catch (e) {
-      console.error('Error verificando CAPTCHA:', e);
-      return true; // Permitir si hay error de red
+      return true;
+    }
+  };
+
+  // ============================================================
+  // MODERAR CONTENIDO (IA)
+  // ============================================================
+  const moderarContenido = async (texto) => {
+    try {
+      const response = await fetch('https://xjzoabsuzbqxkriamqed.supabase.co/functions/v1/moderate-content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texto }),
+      });
+      
+      if (!response.ok) return { permitido: true };
+      const data = await response.json();
+      return data;
+    } catch (e) {
+      console.error('Error moderando:', e);
+      return { permitido: true }; // Si falla, permitir
     }
   };
 
@@ -577,6 +588,14 @@ export default function FireApp() {
           setEnviando(false);
           return;
         }
+      }
+      
+      // 🧠 Moderar contenido con IA
+      const moderacion = await moderarContenido(texto.trim());
+      if (!moderacion.permitido) {
+        setError(`🚫 ${moderacion.razon || 'Contenido no permitido'}`);
+        setEnviando(false);
+        return;
       }
       
       const { data, error: err } = await supabase.rpc('publicar_pensamiento', {
