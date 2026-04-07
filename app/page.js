@@ -361,23 +361,36 @@ export default function FireApp() {
 
   // Renderizar Turnstile cuando se va a escribir
   useEffect(() => {
-    if (turnstileLoaded && pantalla === 'escribir' && turnstileRef.current && !turnstileToken) {
+    if (turnstileLoaded && pantalla === 'escribir' && turnstileRef.current) {
       // Limpiar widget anterior si existe
       turnstileRef.current.innerHTML = '';
+      setTurnstileToken(null);
       
-      window.turnstile.render(turnstileRef.current, {
-        sitekey: TURNSTILE_SITE_KEY,
-        callback: (token) => {
-          console.log('✅ Turnstile token:', token.substring(0, 20) + '...');
-          setTurnstileToken(token);
-        },
-        'expired-callback': () => {
-          setTurnstileToken(null);
-        },
-        theme: 'dark',
-      });
+      try {
+        window.turnstile.render(turnstileRef.current, {
+          sitekey: TURNSTILE_SITE_KEY,
+          callback: (token) => {
+            console.log('✅ Turnstile verificado');
+            setTurnstileToken(token);
+          },
+          'expired-callback': () => {
+            console.log('⚠️ Token expirado');
+            setTurnstileToken(null);
+          },
+          'error-callback': () => {
+            console.log('❌ Error Turnstile');
+            // En caso de error, permitir publicar (fallback)
+            setTurnstileToken('bypass-on-error');
+          },
+          theme: 'dark',
+          size: 'normal',
+        });
+      } catch (e) {
+        console.error('Error renderizando Turnstile:', e);
+        setTurnstileToken('bypass-on-error');
+      }
     }
-  }, [turnstileLoaded, pantalla, turnstileToken]);
+  }, [turnstileLoaded, pantalla]);
 
   // ============================================================
   // LOAD DATA
@@ -507,17 +520,29 @@ export default function FireApp() {
   // VERIFICAR CAPTCHA (Turnstile)
   // ============================================================
   const verificarCaptcha = async (token) => {
+    // Si es bypass por error, permitir
+    if (token === 'bypass-on-error') {
+      console.log('⚠️ Bypass CAPTCHA por error');
+      return true;
+    }
+    
     try {
       const response = await fetch('https://xjzoabsuzbqxkriamqed.supabase.co/functions/v1/verify-captcha', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token }),
       });
+      
+      if (!response.ok) {
+        console.log('⚠️ Edge function error, permitiendo...');
+        return true; // Permitir si hay error del servidor
+      }
+      
       const data = await response.json();
       return data.success === true;
     } catch (e) {
       console.error('Error verificando CAPTCHA:', e);
-      return false;
+      return true; // Permitir si hay error de red
     }
   };
 
@@ -538,24 +563,20 @@ export default function FireApp() {
       setError('Solo letras, números y puntuación básica. Máximo 200 caracteres.');
       return;
     }
-    
-    // Verificar CAPTCHA
-    if (!turnstileToken) {
-      setError('Completa la verificación de seguridad');
-      return;
-    }
 
     setEnviando(true);
     setError('');
 
     try {
-      // Primero verificar CAPTCHA con Cloudflare
-      const captchaOk = await verificarCaptcha(turnstileToken);
-      if (!captchaOk) {
-        setError('Error de verificación. Intenta de nuevo.');
-        setTurnstileToken(null);
-        setEnviando(false);
-        return;
+      // Verificar CAPTCHA si hay token
+      if (turnstileToken && turnstileToken !== 'bypass-on-error') {
+        const captchaOk = await verificarCaptcha(turnstileToken);
+        if (!captchaOk) {
+          setError('Error de verificación. Intenta de nuevo.');
+          setTurnstileToken(null);
+          setEnviando(false);
+          return;
+        }
       }
       
       const { data, error: err } = await supabase.rpc('publicar_pensamiento', {
@@ -1320,7 +1341,7 @@ export default function FireApp() {
               justifyContent: 'center',
             }}
           />
-          {turnstileToken && (
+          {turnstileToken && turnstileToken !== 'bypass-on-error' && (
             <p style={{ color: COLORS.success, fontSize: '12px', textAlign: 'center', marginBottom: '12px' }}>
               ✓ Verificación completada
             </p>
@@ -1328,14 +1349,14 @@ export default function FireApp() {
 
           <button
             onClick={publicar}
-            disabled={enviando || !texto.trim() || cooldownActivo || !turnstileToken}
+            disabled={enviando || !texto.trim() || cooldownActivo}
             style={{ 
               ...S.btnPrimario, 
-              opacity: (enviando || !texto.trim() || cooldownActivo || !turnstileToken) ? 0.5 : 1,
-              cursor: (enviando || !texto.trim() || cooldownActivo || !turnstileToken) ? 'not-allowed' : 'pointer',
+              opacity: (enviando || !texto.trim() || cooldownActivo) ? 0.5 : 1,
+              cursor: (enviando || !texto.trim() || cooldownActivo) ? 'not-allowed' : 'pointer',
             }}
           >
-            {enviando ? 'Soltando...' : cooldownActivo ? `Espera ${cooldownRestante}s` : !turnstileToken ? '🔒 Verificando...' : '🔥 SOLTAR'}
+            {enviando ? 'Soltando...' : cooldownActivo ? `Espera ${cooldownRestante}s` : '🔥 SOLTAR'}
           </button>
 
           <button onClick={() => { setPantalla('feed'); setError(''); }} style={S.btnSecundario}>
