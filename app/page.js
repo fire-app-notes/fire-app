@@ -252,10 +252,12 @@ export default function FireApp() {
     logros: []
   });
   
-  // Turnstile CAPTCHA
+  // Turnstile CAPTCHA (modo invisible)
   const [turnstileToken, setTurnstileToken] = useState(null);
   const [turnstileLoaded, setTurnstileLoaded] = useState(false);
   const turnstileRef = useRef(null);
+  const turnstileWidgetIdRef = useRef(null);
+  const turnstileResolveRef = useRef(null); // Para resolver promesa al obtener token
 
   // [FIX-3] Debounce refs para prevenir spam de acciones
   const fireDebounceRef = useRef(new Set()); // IDs en proceso
@@ -378,17 +380,29 @@ export default function FireApp() {
     return () => clearInterval(interval);
   }, [ubicacion, deviceId]);
 
-  // Renderizar Turnstile cuando se va a escribir
+  // Renderizar Turnstile INVISIBLE cuando se va a escribir
   useEffect(() => {
     if (turnstileLoaded && pantalla === 'escribir' && turnstileRef.current) {
+      // Limpiar widget anterior si existe
+      if (turnstileWidgetIdRef.current !== null) {
+        try { window.turnstile.remove(turnstileWidgetIdRef.current); } catch (e) {}
+        turnstileWidgetIdRef.current = null;
+      }
       turnstileRef.current.innerHTML = '';
       setTurnstileToken(null);
       
       try {
-        window.turnstile.render(turnstileRef.current, {
+        const widgetId = window.turnstile.render(turnstileRef.current, {
           sitekey: TURNSTILE_SITE_KEY,
+          size: 'invisible',
+          execution: 'execute', // No ejecuta automáticamente, esperamos a llamar execute()
           callback: (token) => {
             setTurnstileToken(token);
+            // Si hay una promesa esperando, resolverla
+            if (turnstileResolveRef.current) {
+              turnstileResolveRef.current(token);
+              turnstileResolveRef.current = null;
+            }
           },
           'expired-callback': () => {
             setTurnstileToken(null);
@@ -396,17 +410,28 @@ export default function FireApp() {
           // [FIX-5] CAPTCHA FAIL-CLOSED: si Turnstile falla, NO bypass
           'error-callback': () => {
             setTurnstileToken(null);
-            setError('Error de verificación CAPTCHA. Recarga la página e intenta de nuevo.');
+            if (turnstileResolveRef.current) {
+              turnstileResolveRef.current(null); // Resolver con null = fallo
+              turnstileResolveRef.current = null;
+            }
           },
           theme: 'dark',
-          size: 'normal',
         });
+        turnstileWidgetIdRef.current = widgetId;
       } catch (e) {
         // [FIX-5] CAPTCHA FAIL-CLOSED: no bypass
         setTurnstileToken(null);
-        setError('No se pudo cargar la verificación CAPTCHA. Recarga la página.');
+        setError('No se pudo cargar la verificación. Recarga la página.');
       }
     }
+    
+    // Cleanup al salir de escribir
+    return () => {
+      if (turnstileWidgetIdRef.current !== null && window.turnstile) {
+        try { window.turnstile.remove(turnstileWidgetIdRef.current); } catch (e) {}
+        turnstileWidgetIdRef.current = null;
+      }
+    };
   }, [turnstileLoaded, pantalla]);
 
   // ============================================================
@@ -595,21 +620,54 @@ export default function FireApp() {
       return;
     }
 
-    // [FIX-8] Requiere CAPTCHA completado antes de publicar
-    if (!turnstileToken) {
-      setError('Completa la verificación CAPTCHA antes de publicar.');
-      return;
-    }
-
+    // [FIX-8] Ejecutar CAPTCHA invisible antes de publicar
     setEnviando(true);
     setError('');
 
     try {
-      // Verificar CAPTCHA - obligatorio
-      const captchaOk = await verificarCaptcha(turnstileToken);
+      // Obtener token de Turnstile (invisible - el usuario no ve nada)
+      let token = turnstileToken;
+      if (!token) {
+        if (!turnstileWidgetIdRef.current || !window.turnstile) {
+          setError('Error de verificación. Recarga la página.');
+          setEnviando(false);
+          return;
+        }
+        
+        // Ejecutar Turnstile invisible y esperar el token
+        token = await new Promise((resolve) => {
+          turnstileResolveRef.current = resolve;
+          try {
+            window.turnstile.execute(turnstileRef.current);
+          } catch (e) {
+            resolve(null);
+          }
+          // Timeout de 10 segundos
+          setTimeout(() => {
+            if (turnstileResolveRef.current) {
+              turnstileResolveRef.current(null);
+              turnstileResolveRef.current = null;
+            }
+          }, 10000);
+        });
+        
+        if (!token) {
+          setError('Verificación fallida. Intenta de nuevo.');
+          setEnviando(false);
+          return;
+        }
+      }
+
+    try {
+      // Verificar CAPTCHA con el servidor - obligatorio
+      const captchaOk = await verificarCaptcha(token);
       if (!captchaOk) {
-        setError('Verificación CAPTCHA fallida. Recarga la página e intenta de nuevo.');
+        setError('Verificación fallida. Intenta de nuevo.');
         setTurnstileToken(null);
+        // Reset widget para próximo intento
+        if (turnstileWidgetIdRef.current && window.turnstile) {
+          try { window.turnstile.reset(turnstileRef.current); } catch (e) {}
+        }
         setEnviando(false);
         return;
       }
@@ -656,6 +714,10 @@ export default function FireApp() {
       setMisNotas((prev) => [nuevaNota, ...prev]);
       setTexto('');
       setTurnstileToken(null);
+      // Reset widget para próxima nota
+      if (turnstileWidgetIdRef.current && window.turnstile) {
+        try { window.turnstile.reset(turnstileRef.current); } catch (e) {}
+      }
       setMostrarExito(true);
       setTimeout(() => { setMostrarExito(false); setPantalla('feed'); }, 1500);
     } catch (e) {
@@ -1348,32 +1410,27 @@ export default function FireApp() {
             </p>
           )}
 
-          {/* Turnstile CAPTCHA */}
+          {/* Turnstile CAPTCHA - invisible, no muestra nada */}
           <div 
             ref={turnstileRef} 
             style={{ 
-              margin: '16px 0', 
-              minHeight: '65px',
-              display: 'flex',
-              justifyContent: 'center',
+              position: 'absolute',
+              width: 0,
+              height: 0,
+              overflow: 'hidden',
             }}
           />
-          {turnstileToken && (
-            <p style={{ color: COLORS.success, fontSize: '12px', textAlign: 'center', marginBottom: '12px' }}>
-              ✓ Verificación completada
-            </p>
-          )}
 
           <button
             onClick={publicar}
-            disabled={enviando || !texto.trim() || cooldownActivo || !turnstileToken}
+            disabled={enviando || !texto.trim() || cooldownActivo}
             style={{ 
               ...S.btnPrimario, 
-              opacity: (enviando || !texto.trim() || cooldownActivo || !turnstileToken) ? 0.5 : 1,
-              cursor: (enviando || !texto.trim() || cooldownActivo || !turnstileToken) ? 'not-allowed' : 'pointer',
+              opacity: (enviando || !texto.trim() || cooldownActivo) ? 0.5 : 1,
+              cursor: (enviando || !texto.trim() || cooldownActivo) ? 'not-allowed' : 'pointer',
             }}
           >
-            {enviando ? 'Soltando...' : cooldownActivo ? `Espera ${cooldownRestante}s` : !turnstileToken ? '⏳ Verificando...' : '🔥 SOLTAR'}
+            {enviando ? '🔒 Verificando...' : cooldownActivo ? `Espera ${cooldownRestante}s` : '🔥 SOLTAR'}
           </button>
 
           <button onClick={() => { setPantalla('feed'); setError(''); }} style={S.btnSecundario}>
