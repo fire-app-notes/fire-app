@@ -221,10 +221,21 @@ export default function FireApp() {
   
   // Mapa de calor - puntos de actividad cercana
   const [puntosCalor, setPuntosCalor] = useState([]);
+  
+  // IP del usuario para rate limiting
+  const [userIp, setUserIp] = useState(null);
+  
+  // Estadísticas del usuario (historial permanente)
+  const [misEstadisticas, setMisEstadisticas] = useState({
+    total_fires_recibidos: 0,
+    total_notas_publicadas: 0,
+    mejor_nota_fires: 0,
+    logros: []
+  });
 
   // --- COMPUTED ---
-  const totalDisponible = tieneIlimitado ? 999 : 3 + videosVistos + extrasComprados;
-  const puedeEscribir = tieneIlimitado || pensamientosUsados < totalDisponible;
+  const totalDisponible = 3 + videosVistos + extrasComprados;
+  const puedeEscribir = pensamientosUsados < totalDisponible;
   const totalFires = misNotas.reduce((sum, nota) => sum + (nota.fires || 0), 0);
 
   const watchIdRef = useRef(null);
@@ -261,6 +272,12 @@ export default function FireApp() {
     const fp = generateFingerprint();
     setDeviceId(id);
     setFingerprint(fp);
+
+    // Obtener IP del usuario para rate limiting
+    fetch('https://api.ipify.org?format=json')
+      .then(res => res.json())
+      .then(data => setUserIp(data.ip))
+      .catch(() => setUserIp(null));
 
     // Check if first visit
     const hasVisited = localStorage.getItem('fire_visited');
@@ -329,11 +346,33 @@ export default function FireApp() {
   const cargarTodo = async () => {
     setCargando(true);
     try {
-      await Promise.all([cargarNotas(), cargarEstado(), cargarMisNotas()]);
+      await Promise.all([cargarNotas(), cargarEstado(), cargarMisNotas(), cargarEstadisticas()]);
     } catch (e) {
       console.error('Load error:', e);
     } finally {
       setCargando(false);
+    }
+  };
+
+  const cargarEstadisticas = async () => {
+    if (!deviceId) return;
+    try {
+      const { data, error } = await supabase
+        .from('estadisticas_usuario')
+        .select('*')
+        .eq('device_id', deviceId)
+        .single();
+      
+      if (data && !error) {
+        setMisEstadisticas({
+          total_fires_recibidos: data.total_fires_recibidos || 0,
+          total_notas_publicadas: data.total_notas_publicadas || 0,
+          mejor_nota_fires: data.mejor_nota_fires || 0,
+          logros: data.logros || []
+        });
+      }
+    } catch (e) {
+      // Si no existe el registro, está bien
     }
   };
 
@@ -453,6 +492,7 @@ export default function FireApp() {
         p_lng: ubicacion.lng,
         p_device_id: deviceId,
         p_fingerprint: fingerprint,
+        p_ip: userIp,
       });
 
       if (err) { setError('Error de conexión: ' + err.message); setEnviando(false); return; }
@@ -590,8 +630,11 @@ export default function FireApp() {
         fecha: new Date().toISOString().split('T')[0],
       });
       if (!err) {
-        if (tipo === 'ilimitado') setTieneIlimitado(true);
-        else setExtrasComprados((prev) => prev + 3);
+        if (tipo === 'extra10') {
+          setExtrasComprados((prev) => prev + 10);
+        } else if (tipo === 'extra3') {
+          setExtrasComprados((prev) => prev + 3);
+        }
         setMostrarModal(false);
       }
     } catch (e) { setError('Error al procesar compra.'); }
@@ -751,19 +794,76 @@ export default function FireApp() {
         </div>
       )}
 
-      {/* ===== STATS DE MIS NOTAS ===== */}
-      {pantalla === 'misnotas' && !cargandoMisNotas && misNotas.length > 0 && (
-        <div style={S.misNotasStats}>
-          <div style={S.statItem}>
-            <span style={S.statNumber}>{misNotas.length}</span>
-            <span style={S.statLabel}>notas activas</span>
+      {/* ===== STATS DE MIS NOTAS + HISTORIAL ===== */}
+      {pantalla === 'misnotas' && !cargandoMisNotas && (
+        <>
+          {/* Estadísticas actuales */}
+          <div style={S.misNotasStats}>
+            <div style={S.statItem}>
+              <span style={S.statNumber}>{misNotas.length}</span>
+              <span style={S.statLabel}>activas</span>
+            </div>
+            <div style={S.statDivider} />
+            <div style={S.statItem}>
+              <span style={S.statNumber}>{totalFires}</span>
+              <span style={S.statLabel}>🔥 hoy</span>
+            </div>
+            <div style={S.statDivider} />
+            <div style={S.statItem}>
+              <span style={{...S.statNumber, color: COLORS.gold}}>{misEstadisticas.total_fires_recibidos.toLocaleString()}</span>
+              <span style={S.statLabel}>🔥 total</span>
+            </div>
           </div>
-          <div style={S.statDivider} />
-          <div style={S.statItem}>
-            <span style={S.statNumber}>{totalFires}</span>
-            <span style={S.statLabel}>🔥 totales</span>
+          
+          {/* Historial - Solo estrellas doradas */}
+          <div style={S.historialBox}>
+            <div style={S.historialHeader}>
+              <span style={{ fontSize: '18px' }}>🏆</span>
+              <span style={S.historialTitle}>Tu Historial</span>
+            </div>
+            
+            <div style={S.historialStats}>
+              <div style={S.historialStatItem}>
+                <span style={S.historialStatNumber}>{misEstadisticas.total_notas_publicadas}</span>
+                <span style={S.historialStatLabel}>notas publicadas</span>
+              </div>
+              <div style={S.historialStatItem}>
+                <span style={S.historialStatNumber}>{misEstadisticas.mejor_nota_fires.toLocaleString()}</span>
+                <span style={S.historialStatLabel}>mejor nota 🔥</span>
+              </div>
+            </div>
+            
+            {/* Estrellas doradas conseguidas */}
+            {misEstadisticas.logros && misEstadisticas.logros.length > 0 ? (
+              <div style={S.estrellasSection}>
+                <p style={S.estrellasTitle}>🌟 Tus Estrellas Doradas</p>
+                <div style={S.estrellasGrid}>
+                  {misEstadisticas.logros.map((logro, idx) => {
+                    // Formato: star_2026_04 (año_mes)
+                    const partes = logro.split('_');
+                    const año = partes[1];
+                    const mes = partes[2];
+                    const meses = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+                    const nombreMes = meses[parseInt(mes)] || mes;
+                    
+                    return (
+                      <div key={idx} style={S.estrellaItem}>
+                        <span style={S.estrellaEmoji}>🌟</span>
+                        <span style={S.estrellaFecha}>{nombreMes} {año}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p style={S.estrellaDesc}>10,000+ fuegos en una nota</p>
+              </div>
+            ) : (
+              <div style={S.sinEstrellas}>
+                <span style={{ fontSize: '32px', opacity: 0.3 }}>🌟</span>
+                <p style={S.sinEstrellasText}>Consigue 10,000 🔥 en una nota para ganar tu primera estrella dorada</p>
+              </div>
+            )}
           </div>
-        </div>
+        </>
       )}
 
       {/* ===== FEED ===== */}
@@ -882,13 +982,50 @@ export default function FireApp() {
               {/* Puntos de notas */}
               {notas.map((nota, idx) => {
                 const distancia = nota.distanciaMetros || 500;
-                const angulo = (idx * 137.5) % 360; // Distribución de girasol
-                const radio = (distancia / 1000) * 45; // 45% del radio máximo
+                const angulo = (idx * 137.5) % 360;
+                const radio = (distancia / 1000) * 45;
                 const x = 50 + radio * Math.cos(angulo * Math.PI / 180);
                 const y = 50 + radio * Math.sin(angulo * Math.PI / 180);
-                const quemado = calcularQuemado(nota.created_at, nota.expires_at);
-                const nivelFuego = getNivelFuego(quemado);
-                const size = nota.fires >= 10 ? 16 : nota.fires >= 5 ? 14 : 12;
+                
+                // Determinar nivel visual según fuegos
+                let content, size, glow, animation, color;
+                
+                if (nota.fires >= 10000) {
+                  // 🌟 Dorado brillante - LEGENDARIO
+                  content = '🌟';
+                  size = 28;
+                  glow = '0 0 20px #FFD700, 0 0 40px #FFD700, 0 0 60px #FFA500';
+                  animation = 'pulse 0.6s ease infinite';
+                  color = '#FFD700';
+                } else if (nota.fires >= 1000) {
+                  // Nube dorada con fueguito
+                  content = '💭🔥';
+                  size = 22;
+                  glow = '0 0 15px #FFD700, 0 0 30px #FFD700';
+                  animation = 'pulse 0.8s ease infinite';
+                  color = '#FFD700';
+                } else if (nota.fires >= 100) {
+                  // Nube con varios fueguitos - brillo naranja
+                  content = '🔥💭🔥';
+                  size = 18;
+                  glow = '0 0 12px #FF6B35, 0 0 24px #FF6B35';
+                  animation = 'pulse 1s ease infinite';
+                  color = '#FF6B35';
+                } else if (nota.fires >= 10) {
+                  // Nube con un fueguito
+                  content = '💭✨';
+                  size = 16;
+                  glow = '0 0 8px #FF6B35';
+                  animation = 'none';
+                  color = '#FF6B35';
+                } else {
+                  // Nube normal
+                  content = '💭';
+                  size = 14;
+                  glow = 'none';
+                  animation = 'none';
+                  color = '#8892B0';
+                }
                 
                 return (
                   <div
@@ -899,14 +1036,15 @@ export default function FireApp() {
                       top: `${y}%`,
                       transform: 'translate(-50%, -50%)',
                       fontSize: `${size}px`,
-                      opacity: nivelFuego >= 2 ? 1 : 0.8,
-                      animation: nivelFuego >= 3 ? 'pulse 1s ease infinite' : 'none',
+                      filter: nota.fires >= 1000 ? 'drop-shadow(0 0 8px gold)' : 'none',
+                      animation: animation,
                       cursor: 'pointer',
-                      zIndex: nota.fires + 1,
+                      zIndex: Math.min(nota.fires, 100) + 1,
+                      whiteSpace: 'nowrap',
                     }}
-                    title={`${nota.fires} 🔥 · ${nota.distanciaMetros}m`}
+                    title={`${nota.fires.toLocaleString()} 🔥 · ${nota.distanciaMetros}m`}
                   >
-                    {nota.fires >= 10 ? '🔥' : nota.fires >= 5 ? '🧡' : '💭'}
+                    {content}
                   </div>
                 );
               })}
@@ -918,9 +1056,11 @@ export default function FireApp() {
             
             {/* Leyenda */}
             <div style={S.mapaLeyenda}>
-              <span>💭 nota</span>
-              <span>🧡 5+ 🔥</span>
-              <span>🔥 10+ 🔥</span>
+              <span>💭</span>
+              <span>💭✨ 10+</span>
+              <span>🔥💭🔥 100+</span>
+              <span>💭🔥 1k+</span>
+              <span>🌟 10k+</span>
             </div>
           </div>
           
@@ -1195,19 +1335,17 @@ export default function FireApp() {
               <span style={S.modalOptIcon}>🔥</span>
               <div>
                 <strong>+3 pensamientos</strong>
-                <p style={S.modalOptDesc}>$9.99 MXN</p>
+                <p style={S.modalOptDesc}>$9.90 MXN</p>
               </div>
             </button>
 
-            {!tieneIlimitado && (
-              <button onClick={() => comprar('ilimitado')} style={S.modalOpt}>
-                <span style={S.modalOptIcon}>∞</span>
-                <div>
-                  <strong>Ilimitado hoy</strong>
-                  <p style={S.modalOptDesc}>$29.99 MXN</p>
-                </div>
-              </button>
-            )}
+            <button onClick={() => comprar('extra10')} style={{...S.modalOpt, border: `2px solid ${COLORS.gold}`}}>
+              <span style={S.modalOptIcon}>⭐</span>
+              <div>
+                <strong>+10 pensamientos</strong>
+                <p style={{...S.modalOptDesc, color: COLORS.gold}}>$19.90 MXN · Mejor valor</p>
+              </div>
+            </button>
 
             {/* Métodos de pago */}
             <div style={S.paymentMethods}>
@@ -1252,34 +1390,27 @@ export default function FireApp() {
             </div>
             <p style={S.modalTagline}>Pensamientos anónimos a 1km de ti</p>
             
-            <div style={S.infoGrid}>
-              <div style={S.infoItem}>
-                <span style={S.infoIcon}>📍</span>
-                <div>
-                  <strong>Hiperlocal</strong>
-                  <p>Solo ves notas a 1km máximo</p>
-                </div>
+            {/* Grid mejorado con colores */}
+            <div style={S.infoGridNew}>
+              <div style={{...S.infoItemNew, backgroundColor: '#1E3A5F'}}>
+                <span style={S.infoIconNew}>📍</span>
+                <strong style={S.infoTitleNew}>Hiperlocal</strong>
+                <p style={S.infoDescNew}>Solo ves notas a 1km máximo</p>
               </div>
-              <div style={S.infoItem}>
-                <span style={S.infoIcon}>⏱</span>
-                <div>
-                  <strong>Efímero</strong>
-                  <p>Todo desaparece en 24 horas</p>
-                </div>
+              <div style={{...S.infoItemNew, backgroundColor: '#2D1B4E'}}>
+                <span style={S.infoIconNew}>⏱</span>
+                <strong style={S.infoTitleNew}>Efímero</strong>
+                <p style={S.infoDescNew}>Todo desaparece en 24 horas</p>
               </div>
-              <div style={S.infoItem}>
-                <span style={S.infoIcon}>👤</span>
-                <div>
-                  <strong>Anónimo</strong>
-                  <p>Sin registro, sin perfiles</p>
-                </div>
+              <div style={{...S.infoItemNew, backgroundColor: '#1B4D3E'}}>
+                <span style={S.infoIconNew}>👤</span>
+                <strong style={S.infoTitleNew}>Anónimo</strong>
+                <p style={S.infoDescNew}>Sin registro, sin perfiles</p>
               </div>
-              <div style={S.infoItem}>
-                <span style={S.infoIcon}>🔥</span>
-                <div>
-                  <strong>Simple</strong>
-                  <p>Solo texto y fuegos</p>
-                </div>
+              <div style={{...S.infoItemNew, backgroundColor: '#4A1F1F'}}>
+                <span style={S.infoIconNew}>🔥</span>
+                <strong style={S.infoTitleNew}>Simple</strong>
+                <p style={S.infoDescNew}>Solo texto y fuegos</p>
               </div>
             </div>
 
@@ -1291,7 +1422,7 @@ export default function FireApp() {
               <p style={S.ruleText}>Amenazar con nombres, contenido de menores, cosas ilegales</p>
             </div>
 
-            {/* IMPORTANTE - antes decía OJO */}
+            {/* IMPORTANTE */}
             <div style={S.importantBox}>
               <p style={S.importantTitle}>⚠️ IMPORTANTE</p>
               <p style={S.importantText}>
@@ -2012,6 +2143,40 @@ const S = {
     flexShrink: 0,
   },
   
+  // Info grid mejorado con colores
+  infoGridNew: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '12px',
+    marginBottom: '20px',
+  },
+  infoItemNew: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    textAlign: 'center',
+    padding: '16px 12px',
+    borderRadius: '16px',
+    minHeight: '110px',
+  },
+  infoIconNew: {
+    fontSize: '28px',
+    marginBottom: '8px',
+  },
+  infoTitleNew: {
+    fontSize: '15px',
+    fontWeight: '700',
+    color: COLORS.white,
+    marginBottom: '4px',
+  },
+  infoDescNew: {
+    fontSize: '12px',
+    color: COLORS.grayLight,
+    margin: 0,
+    lineHeight: '1.4',
+  },
+  
   // Rules box
   rulesBox: {
     backgroundColor: COLORS.bgCard,
@@ -2336,5 +2501,102 @@ const S = {
     fontSize: '13px',
     color: COLORS.gray,
     marginTop: '4px',
+  },
+  
+  // ============================================================
+  // HISTORIAL Y ESTRELLAS DORADAS
+  // ============================================================
+  historialBox: {
+    backgroundColor: COLORS.bgSecondary,
+    borderRadius: '16px',
+    padding: '16px',
+    margin: '0 16px 16px 16px',
+    border: `1px solid ${COLORS.bgCard}`,
+  },
+  historialHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '16px',
+  },
+  historialTitle: {
+    fontSize: '16px',
+    fontWeight: '700',
+    color: COLORS.gold,
+    fontFamily: "'Space Grotesk', sans-serif",
+  },
+  historialStats: {
+    display: 'flex',
+    justifyContent: 'space-around',
+    marginBottom: '16px',
+    paddingBottom: '16px',
+    borderBottom: `1px solid ${COLORS.bgCard}`,
+  },
+  historialStatItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+  },
+  historialStatNumber: {
+    fontSize: '20px',
+    fontWeight: '700',
+    color: COLORS.white,
+  },
+  historialStatLabel: {
+    fontSize: '11px',
+    color: COLORS.gray,
+    marginTop: '2px',
+  },
+  estrellasSection: {
+    textAlign: 'center',
+  },
+  estrellasTitle: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: COLORS.gold,
+    marginBottom: '12px',
+  },
+  estrellasGrid: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: '10px',
+    marginBottom: '8px',
+  },
+  estrellaItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    padding: '10px 14px',
+    background: `linear-gradient(135deg, ${COLORS.bgCard}, #2a2a3a)`,
+    borderRadius: '12px',
+    border: `2px solid ${COLORS.gold}`,
+    boxShadow: '0 0 15px rgba(255, 215, 0, 0.3)',
+  },
+  estrellaEmoji: {
+    fontSize: '32px',
+    filter: 'drop-shadow(0 0 8px gold)',
+    animation: 'pulse 2s ease infinite',
+  },
+  estrellaFecha: {
+    fontSize: '11px',
+    color: COLORS.gold,
+    marginTop: '4px',
+    fontWeight: '600',
+  },
+  estrellaDesc: {
+    fontSize: '11px',
+    color: COLORS.gray,
+    marginTop: '8px',
+  },
+  sinEstrellas: {
+    textAlign: 'center',
+    padding: '20px',
+  },
+  sinEstrellasText: {
+    fontSize: '12px',
+    color: COLORS.gray,
+    marginTop: '8px',
+    lineHeight: '1.5',
   },
 };
