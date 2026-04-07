@@ -25,23 +25,23 @@ const TURNSTILE_SITE_KEY = '0x4AAAAAAC1muhrmP2gp6FCG';
 // COLORES - PALETA FIRE NOTES
 // ============================================================
 const COLORS = {
-  bgPrimary: '#0D0D15',      // Negro profundo
-  bgSecondary: '#1A1A2E',    // Negro elevado
-  bgCard: '#16213E',         // Card background
-  purple: '#9B59B6',         // Morado principal
-  purpleLight: '#BB8FCE',    // Morado claro
-  purpleDark: '#7D3C98',     // Morado oscuro
-  orange: '#FF6B35',         // Naranja fuego
-  orangeLight: '#FF8C5A',    // Naranja claro
-  gold: '#FFD700',           // Oro/dorado
+  bgPrimary: '#0D0D15',
+  bgSecondary: '#1A1A2E',
+  bgCard: '#16213E',
+  purple: '#9B59B6',
+  purpleLight: '#BB8FCE',
+  purpleDark: '#7D3C98',
+  orange: '#FF6B35',
+  orangeLight: '#FF8C5A',
+  gold: '#FFD700',
   white: '#FFFFFF',
-  gray: '#8892B0',           // Gris para texto secundario
+  gray: '#8892B0',
   grayLight: '#A0AEC0',
   grayDark: '#4A5568',
-  danger: '#E63946',         // Rojo para alertas
-  success: '#10B981',        // Verde éxito
-  notePaper: '#FDF6E3',      // Color papel nota
-  noteText: '#2D2A26',       // Texto en notas
+  danger: '#E63946',
+  success: '#10B981',
+  notePaper: '#FDF6E3',
+  noteText: '#2D2A26',
 };
 
 // ============================================================
@@ -160,15 +160,13 @@ function calcularQuemado(createdAt, expiresAt) {
   return Math.min(Math.max(vidaTranscurrida / vidaTotal, 0), 1);
 }
 
-// Nivel de fuego visual (0-3) basado en qué tan cerca está de expirar
 function getNivelFuego(quemado) {
-  if (quemado >= 0.92) return 3;  // 🔥🔥🔥 Últimas ~2 horas - ARDIENDO
-  if (quemado >= 0.75) return 2;  // 🔥🔥 Últimas ~6 horas - CALIENTE  
-  if (quemado >= 0.5) return 1;   // 🔥 Más de 12 horas - TIBIO
-  return 0; // Nueva, sin efecto
+  if (quemado >= 0.92) return 3;
+  if (quemado >= 0.75) return 2;
+  if (quemado >= 0.5) return 1;
+  return 0;
 }
 
-// Calcular tiempo restante formateado
 function tiempoRestanteCorto(expiresAt) {
   const diffMs = new Date(expiresAt).getTime() - Date.now();
   if (diffMs <= 0) return '💨';
@@ -178,9 +176,30 @@ function tiempoRestanteCorto(expiresAt) {
   return `${diffHr}h`;
 }
 
+// [FIX-1] Validación de texto más estricta - sanitiza HTML/scripts
 function validarTexto(texto) {
+  if (!texto || typeof texto !== 'string') return false;
+  const trimmed = texto.trim();
+  if (trimmed.length === 0 || trimmed.length > 200) return false;
+  
+  // Bloquear HTML tags, scripts, URLs
+  const peligroso = /<[^>]*>|javascript:|on\w+\s*=|data:/i;
+  if (peligroso.test(trimmed)) return false;
+  
+  // Solo caracteres seguros
   const regex = /^[a-zA-ZáéíóúüñÁÉÍÓÚÜÑàèìòùÀÈÌÒÙâêîôûÂÊÎÔÛäëïöüÄËÏÖÜçÇ\s.,;:!?¡¿'"()\-0-9]+$/;
-  return regex.test(texto) && texto.trim().length > 0 && texto.length <= 200;
+  return regex.test(trimmed);
+}
+
+// [FIX-2] Sanitizar texto para display (prevenir XSS en render)
+function sanitizarTexto(texto) {
+  if (!texto) return '';
+  return texto
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
 }
 
 // ============================================================
@@ -222,13 +241,10 @@ export default function FireApp() {
   // Reactions
   const [misReacciones, setMisReacciones] = useState(new Set());
   
-  // Mapa de calor - puntos de actividad cercana
+  // Mapa de calor
   const [puntosCalor, setPuntosCalor] = useState([]);
   
-  // IP del usuario para rate limiting
-  const [userIp, setUserIp] = useState(null);
-  
-  // Estadísticas del usuario (historial permanente)
+  // Estadísticas del usuario
   const [misEstadisticas, setMisEstadisticas] = useState({
     total_fires_recibidos: 0,
     total_notas_publicadas: 0,
@@ -240,6 +256,10 @@ export default function FireApp() {
   const [turnstileToken, setTurnstileToken] = useState(null);
   const [turnstileLoaded, setTurnstileLoaded] = useState(false);
   const turnstileRef = useRef(null);
+
+  // [FIX-3] Debounce refs para prevenir spam de acciones
+  const fireDebounceRef = useRef(new Set()); // IDs en proceso
+  const reporteDebounceRef = useRef(new Set()); // IDs ya reportados en esta sesión
 
   // --- COMPUTED ---
   const totalDisponible = 3 + videosVistos + extrasComprados;
@@ -281,11 +301,10 @@ export default function FireApp() {
     setDeviceId(id);
     setFingerprint(fp);
 
-    // Obtener IP del usuario para rate limiting
-    fetch('https://api.ipify.org?format=json')
-      .then(res => res.json())
-      .then(data => setUserIp(data.ip))
-      .catch(() => setUserIp(null));
+    // [FIX-4] ELIMINADO: fetch a ipify.org
+    // La IP del usuario DEBE obtenerse del lado del servidor (headers del request).
+    // Enviar la IP desde el cliente permite que un atacante mande cualquier IP falsa.
+    // La IP ahora se obtiene en la Edge Function / RPC desde los headers.
 
     // Cargar Turnstile CAPTCHA
     if (!window.turnstile) {
@@ -362,7 +381,6 @@ export default function FireApp() {
   // Renderizar Turnstile cuando se va a escribir
   useEffect(() => {
     if (turnstileLoaded && pantalla === 'escribir' && turnstileRef.current) {
-      // Limpiar widget anterior si existe
       turnstileRef.current.innerHTML = '';
       setTurnstileToken(null);
       
@@ -370,24 +388,23 @@ export default function FireApp() {
         window.turnstile.render(turnstileRef.current, {
           sitekey: TURNSTILE_SITE_KEY,
           callback: (token) => {
-            console.log('✅ Turnstile verificado');
             setTurnstileToken(token);
           },
           'expired-callback': () => {
-            console.log('⚠️ Token expirado');
             setTurnstileToken(null);
           },
+          // [FIX-5] CAPTCHA FAIL-CLOSED: si Turnstile falla, NO bypass
           'error-callback': () => {
-            console.log('❌ Error Turnstile');
-            // En caso de error, permitir publicar (fallback)
-            setTurnstileToken('bypass-on-error');
+            setTurnstileToken(null);
+            setError('Error de verificación CAPTCHA. Recarga la página e intenta de nuevo.');
           },
           theme: 'dark',
           size: 'normal',
         });
       } catch (e) {
-        console.error('Error renderizando Turnstile:', e);
-        setTurnstileToken('bypass-on-error');
+        // [FIX-5] CAPTCHA FAIL-CLOSED: no bypass
+        setTurnstileToken(null);
+        setError('No se pudo cargar la verificación CAPTCHA. Recarga la página.');
       }
     }
   }, [turnstileLoaded, pantalla]);
@@ -400,7 +417,7 @@ export default function FireApp() {
     try {
       await Promise.all([cargarNotas(), cargarEstado(), cargarMisNotas(), cargarEstadisticas()]);
     } catch (e) {
-      console.error('Load error:', e);
+      // Silent fail on load - user sees empty state
     } finally {
       setCargando(false);
     }
@@ -457,7 +474,7 @@ export default function FireApp() {
       
       setNotas(notasFiltradas);
     } catch (e) {
-      console.error('Error cargando notas:', e);
+      // Silent fail
     }
 
     // Load reactions
@@ -485,14 +502,11 @@ export default function FireApp() {
         .gt('expires_at', new Date().toISOString())
         .order('created_at', { ascending: false });
       
-      if (dbError) {
-        console.error('Error cargando mis notas:', dbError);
-        return;
+      if (!dbError) {
+        setMisNotas(data || []);
       }
-      
-      setMisNotas(data || []);
     } catch (e) {
-      console.error('Error:', e);
+      // Silent fail
     } finally {
       setCargandoMisNotas(false);
     }
@@ -512,15 +526,16 @@ export default function FireApp() {
         setExtrasComprados(data.extras || 0);
       }
     } catch (e) {
-      console.error('Estado error:', e);
+      // Silent fail
     }
   };
 
   // ============================================================
-  // VERIFICAR CAPTCHA (Turnstile)
+  // [FIX-6] VERIFICAR CAPTCHA - FAIL CLOSED
   // ============================================================
   const verificarCaptcha = async (token) => {
-    if (token === 'bypass-on-error') return true;
+    // Si no hay token, BLOQUEAR (no bypass)
+    if (!token) return false;
     
     try {
       const response = await fetch('https://xjzoabsuzbqxkriamqed.supabase.co/functions/v1/verify-captcha', {
@@ -529,16 +544,18 @@ export default function FireApp() {
         body: JSON.stringify({ token }),
       });
       
-      if (!response.ok) return true;
+      // [FIX-6] Si el servidor no responde OK, BLOQUEAR
+      if (!response.ok) return false;
       const data = await response.json();
       return data.success === true;
     } catch (e) {
-      return true;
+      // [FIX-6] Si hay error de red, BLOQUEAR (no bypass)
+      return false;
     }
   };
 
   // ============================================================
-  // MODERAR CONTENIDO (IA)
+  // [FIX-7] MODERAR CONTENIDO - FAIL CLOSED
   // ============================================================
   const moderarContenido = async (texto) => {
     try {
@@ -548,12 +565,15 @@ export default function FireApp() {
         body: JSON.stringify({ texto }),
       });
       
-      if (!response.ok) return { permitido: true };
+      // [FIX-7] Si el servidor no responde OK, BLOQUEAR
+      if (!response.ok) {
+        return { permitido: false, razon: 'Error de moderación. Intenta de nuevo en unos segundos.' };
+      }
       const data = await response.json();
       return data;
     } catch (e) {
-      console.error('Error moderando:', e);
-      return { permitido: true }; // Si falla, permitir
+      // [FIX-7] Si la moderación falla, BLOQUEAR (no bypass)
+      return { permitido: false, razon: 'No se pudo verificar el contenido. Intenta de nuevo.' };
     }
   };
 
@@ -575,22 +595,26 @@ export default function FireApp() {
       return;
     }
 
+    // [FIX-8] Requiere CAPTCHA completado antes de publicar
+    if (!turnstileToken) {
+      setError('Completa la verificación CAPTCHA antes de publicar.');
+      return;
+    }
+
     setEnviando(true);
     setError('');
 
     try {
-      // Verificar CAPTCHA si hay token
-      if (turnstileToken && turnstileToken !== 'bypass-on-error') {
-        const captchaOk = await verificarCaptcha(turnstileToken);
-        if (!captchaOk) {
-          setError('Error de verificación. Intenta de nuevo.');
-          setTurnstileToken(null);
-          setEnviando(false);
-          return;
-        }
+      // Verificar CAPTCHA - obligatorio
+      const captchaOk = await verificarCaptcha(turnstileToken);
+      if (!captchaOk) {
+        setError('Verificación CAPTCHA fallida. Recarga la página e intenta de nuevo.');
+        setTurnstileToken(null);
+        setEnviando(false);
+        return;
       }
       
-      // 🧠 Moderar contenido con IA
+      // Moderar contenido con IA - obligatorio
       const moderacion = await moderarContenido(texto.trim());
       if (!moderacion.permitido) {
         setError(`🚫 ${moderacion.razon || 'Contenido no permitido'}`);
@@ -598,19 +622,19 @@ export default function FireApp() {
         return;
       }
       
+      // [FIX-4] Ya no enviamos p_ip desde el cliente
       const { data, error: err } = await supabase.rpc('publicar_pensamiento', {
         p_texto: texto.trim(),
         p_lat: ubicacion.lat,
         p_lng: ubicacion.lng,
         p_device_id: deviceId,
         p_fingerprint: fingerprint,
-        p_ip: userIp,
+        p_ip: null, // IP se obtiene server-side ahora
       });
 
-      if (err) { setError('Error de conexión: ' + err.message); setEnviando(false); return; }
+      if (err) { setError('Error de conexión. Intenta de nuevo.'); setEnviando(false); return; }
       
       if (!data.ok) {
-        // Detectar si es error de cooldown
         if (data.error && data.error.includes('segundo')) {
           const match = data.error.match(/(\d+)/);
           const segundos = match ? parseInt(match[1]) : COOLDOWN_SECONDS;
@@ -624,14 +648,14 @@ export default function FireApp() {
         return;
       }
 
-      // Éxito - iniciar cooldown
+      // Éxito
       iniciarCooldown(COOLDOWN_SECONDS);
       setPensamientosUsados(data.usados);
       const nuevaNota = {...data.nota, distancia: '0.000', distanciaMetros: 0};
       setNotas((prev) => [nuevaNota, ...prev]);
       setMisNotas((prev) => [nuevaNota, ...prev]);
       setTexto('');
-      setTurnstileToken(null); // Reset CAPTCHA para próxima nota
+      setTurnstileToken(null);
       setMostrarExito(true);
       setTimeout(() => { setMostrarExito(false); setPantalla('feed'); }, 1500);
     } catch (e) {
@@ -642,12 +666,14 @@ export default function FireApp() {
   };
 
   // ============================================================
-  // TOGGLE FIRE
+  // [FIX-9] TOGGLE FIRE - CON DEBOUNCE ANTI-SPAM
   // ============================================================
   const hacerFire = async (notaId) => {
-    const yaReaccione = misReacciones.has(notaId);
+    // Prevenir doble-click / spam
+    if (fireDebounceRef.current.has(notaId)) return;
+    fireDebounceRef.current.add(notaId);
     
-    console.log('🔥 Toggle fire:', { notaId, yaReaccione, deviceId });
+    const yaReaccione = misReacciones.has(notaId);
 
     // Actualización optimista
     setMisReacciones((prev) => {
@@ -668,10 +694,7 @@ export default function FireApp() {
         p_device_id: deviceId,
       });
       
-      console.log('🔥 RPC Response:', { data, error });
-      
       if (error) {
-        console.error('🔥 RPC Error:', error);
         // Revertir cambio optimista
         setMisReacciones((prev) => {
           const next = new Set(prev);
@@ -687,14 +710,12 @@ export default function FireApp() {
       }
       
       if (data && data.fires !== undefined) {
-        console.log('🔥 Sync fires to:', data.fires);
         const syncFires = (notas) => notas.map((n) => 
           n.id === notaId ? { ...n, fires: data.fires } : n
         );
         setNotas(syncFires);
         setMisNotas(syncFires);
         
-        // Sincronizar el estado de reacción
         setMisReacciones((prev) => {
           const next = new Set(prev);
           if (data.liked) {
@@ -706,7 +727,6 @@ export default function FireApp() {
         });
       }
     } catch (e) {
-      console.error('🔥 Catch error:', e);
       // Revertir cambio optimista
       setMisReacciones((prev) => {
         const next = new Set(prev);
@@ -718,6 +738,11 @@ export default function FireApp() {
       );
       setNotas(revertFires);
       setMisNotas(revertFires);
+    } finally {
+      // [FIX-9] Cooldown de 500ms antes de permitir otro fire al mismo ID
+      setTimeout(() => {
+        fireDebounceRef.current.delete(notaId);
+      }, 500);
     }
   };
 
@@ -754,9 +779,16 @@ export default function FireApp() {
   };
 
   // ============================================================
-  // REPORTAR
+  // [FIX-10] REPORTAR - CON PROTECCIÓN ANTI-SPAM
   // ============================================================
   const reportarNota = async (notaId) => {
+    // Prevenir reportes duplicados en la misma sesión
+    if (reporteDebounceRef.current.has(notaId)) {
+      alert('Ya reportaste esta nota.');
+      setMostrarReporte(null);
+      return;
+    }
+    
     try {
       const { data, error } = await supabase.rpc('reportar_nota', {
         p_pensamiento_id: notaId,
@@ -770,6 +802,8 @@ export default function FireApp() {
       }
       
       if (data?.ok) {
+        // Marcar como reportada en esta sesión
+        reporteDebounceRef.current.add(notaId);
         setMostrarReporte(null);
         if (data.eliminado || data.reportes >= 5) {
           setNotas((prev) => prev.filter((n) => n.id !== notaId));
@@ -817,7 +851,6 @@ export default function FireApp() {
           <span style={{ fontSize: '16px' }}>?</span>
         </button>
         
-        {/* LOGO - Exactamente como la imagen */}
         <div style={S.logoWrap}>
           <span style={{ fontSize: '26px' }}>🔥</span>
           <span style={S.logoFire}>FIRE</span>
@@ -825,7 +858,6 @@ export default function FireApp() {
         </div>
         
         <div style={S.headerRight}>
-          {/* CONTADOR DE NOTAS */}
           <div style={S.contadorWrap} onClick={() => setMostrarDebug(!mostrarDebug)}>
             {tieneIlimitado ? (
               <span style={S.contadorInfinito}>∞</span>
@@ -910,7 +942,6 @@ export default function FireApp() {
       {/* ===== STATS DE MIS NOTAS + HISTORIAL ===== */}
       {pantalla === 'misnotas' && !cargandoMisNotas && (
         <>
-          {/* Estadísticas actuales */}
           <div style={S.misNotasStats}>
             <div style={S.statItem}>
               <span style={S.statNumber}>{misNotas.length}</span>
@@ -928,7 +959,6 @@ export default function FireApp() {
             </div>
           </div>
           
-          {/* Historial - Solo estrellas doradas */}
           <div style={S.historialBox}>
             <div style={S.historialHeader}>
               <span style={{ fontSize: '18px' }}>🏆</span>
@@ -946,13 +976,11 @@ export default function FireApp() {
               </div>
             </div>
             
-            {/* Estrellas doradas conseguidas */}
             {misEstadisticas.logros && misEstadisticas.logros.length > 0 ? (
               <div style={S.estrellasSection}>
                 <p style={S.estrellasTitle}>🌟 Tus Estrellas Doradas</p>
                 <div style={S.estrellasGrid}>
                   {misEstadisticas.logros.map((logro, idx) => {
-                    // Formato: star_2026_04 (año_mes)
                     const partes = logro.split('_');
                     const año = partes[1];
                     const mes = partes[2];
@@ -1002,7 +1030,6 @@ export default function FireApp() {
                 const tieneReaccion = misReacciones.has(nota.id);
                 const esMia = nota.device_id === deviceId;
                 
-                // Estilos dinámicos según qué tan quemada está
                 const estiloQuemado = {
                   opacity: nivelFuego >= 3 ? 0.85 : nivelFuego >= 2 ? 0.9 : 1 - (quemado * 0.15),
                   boxShadow: nivelFuego >= 2 
@@ -1021,17 +1048,14 @@ export default function FireApp() {
                   }}>
                     <div style={S.notaLines} />
                     
-                    {/* Indicador de quemándose */}
                     {nivelFuego >= 2 && (
                       <div style={S.burningIndicator}>
                         {nivelFuego >= 3 ? '🔥🔥🔥' : '🔥🔥'}
                       </div>
                     )}
                     
-                    {/* Badge de tu nota */}
                     {esMia && <div style={S.tuNotaBadgeFeed}>Tu nota</div>}
                     
-                    {/* Indicador de nota popular */}
                     {estaArdiendo && nivelFuego < 2 && <div style={S.notaHot}>🔥</div>}
                     
                     <p style={S.notaTexto}>{nota.texto}</p>
@@ -1086,13 +1110,10 @@ export default function FireApp() {
             <p style={S.mapaSubtitle}>Notas en tu zona (1km de radio)</p>
           </div>
           
-          {/* Mini mapa visual */}
           <div style={S.mapaVisual}>
             <div style={S.mapaCirculo}>
-              {/* Centro - Tu ubicación */}
               <div style={S.mapaCentro}>📍</div>
               
-              {/* Puntos de notas */}
               {notas.map((nota, idx) => {
                 const distancia = nota.distanciaMetros || 500;
                 const angulo = (idx * 137.5) % 360;
@@ -1100,44 +1121,27 @@ export default function FireApp() {
                 const x = 50 + radio * Math.cos(angulo * Math.PI / 180);
                 const y = 50 + radio * Math.sin(angulo * Math.PI / 180);
                 
-                // Determinar nivel visual según fuegos
                 let content, size, glow, animation, color;
                 
                 if (nota.fires >= 10000) {
-                  // 🌟 Dorado brillante - LEGENDARIO
-                  content = '🌟';
-                  size = 28;
+                  content = '🌟'; size = 28;
                   glow = '0 0 20px #FFD700, 0 0 40px #FFD700, 0 0 60px #FFA500';
-                  animation = 'pulse 0.6s ease infinite';
-                  color = '#FFD700';
+                  animation = 'pulse 0.6s ease infinite'; color = '#FFD700';
                 } else if (nota.fires >= 1000) {
-                  // Nube dorada con fueguito
-                  content = '💭🔥';
-                  size = 22;
+                  content = '💭🔥'; size = 22;
                   glow = '0 0 15px #FFD700, 0 0 30px #FFD700';
-                  animation = 'pulse 0.8s ease infinite';
-                  color = '#FFD700';
+                  animation = 'pulse 0.8s ease infinite'; color = '#FFD700';
                 } else if (nota.fires >= 100) {
-                  // Nube con varios fueguitos - brillo naranja
-                  content = '🔥💭🔥';
-                  size = 18;
+                  content = '🔥💭🔥'; size = 18;
                   glow = '0 0 12px #FF6B35, 0 0 24px #FF6B35';
-                  animation = 'pulse 1s ease infinite';
-                  color = '#FF6B35';
+                  animation = 'pulse 1s ease infinite'; color = '#FF6B35';
                 } else if (nota.fires >= 10) {
-                  // Nube con un fueguito
-                  content = '💭✨';
-                  size = 16;
+                  content = '💭✨'; size = 16;
                   glow = '0 0 8px #FF6B35';
-                  animation = 'none';
-                  color = '#FF6B35';
+                  animation = 'none'; color = '#FF6B35';
                 } else {
-                  // Nube normal
-                  content = '💭';
-                  size = 14;
-                  glow = 'none';
-                  animation = 'none';
-                  color = '#8892B0';
+                  content = '💭'; size = 14;
+                  glow = 'none'; animation = 'none'; color = '#8892B0';
                 }
                 
                 return (
@@ -1162,12 +1166,10 @@ export default function FireApp() {
                 );
               })}
               
-              {/* Círculos de distancia */}
               <div style={S.mapaCircle500}></div>
               <div style={S.mapaCircle1000}></div>
             </div>
             
-            {/* Leyenda */}
             <div style={S.mapaLeyenda}>
               <span>💭</span>
               <span>💭✨ 10+</span>
@@ -1177,7 +1179,6 @@ export default function FireApp() {
             </div>
           </div>
           
-          {/* Estadísticas */}
           <div style={S.mapaStats}>
             <div style={S.mapaStatItem}>
               <span style={S.mapaStatNumber}>{notas.length}</span>
@@ -1197,7 +1198,6 @@ export default function FireApp() {
             </div>
           </div>
           
-          {/* Zona info */}
           <div style={S.mapaZonaInfo}>
             {notas.length === 0 ? (
               <>
@@ -1255,7 +1255,6 @@ export default function FireApp() {
                 const nivelFuego = getNivelFuego(quemado);
                 const estaArdiendo = nota.fires >= 10;
                 
-                // Estilos dinámicos según qué tan quemada está
                 const estiloQuemado = {
                   opacity: nivelFuego >= 3 ? 0.85 : nivelFuego >= 2 ? 0.9 : 1,
                   boxShadow: nivelFuego >= 2 
@@ -1274,7 +1273,6 @@ export default function FireApp() {
                   }}>
                     <div style={S.notaLines} />
                     
-                    {/* Indicador de quemándose */}
                     {nivelFuego >= 2 && (
                       <div style={S.burningIndicator}>
                         {nivelFuego >= 3 ? '🔥🔥🔥 EXPIRANDO' : '🔥🔥'}
@@ -1360,7 +1358,7 @@ export default function FireApp() {
               justifyContent: 'center',
             }}
           />
-          {turnstileToken && turnstileToken !== 'bypass-on-error' && (
+          {turnstileToken && (
             <p style={{ color: COLORS.success, fontSize: '12px', textAlign: 'center', marginBottom: '12px' }}>
               ✓ Verificación completada
             </p>
@@ -1368,14 +1366,14 @@ export default function FireApp() {
 
           <button
             onClick={publicar}
-            disabled={enviando || !texto.trim() || cooldownActivo}
+            disabled={enviando || !texto.trim() || cooldownActivo || !turnstileToken}
             style={{ 
               ...S.btnPrimario, 
-              opacity: (enviando || !texto.trim() || cooldownActivo) ? 0.5 : 1,
-              cursor: (enviando || !texto.trim() || cooldownActivo) ? 'not-allowed' : 'pointer',
+              opacity: (enviando || !texto.trim() || cooldownActivo || !turnstileToken) ? 0.5 : 1,
+              cursor: (enviando || !texto.trim() || cooldownActivo || !turnstileToken) ? 'not-allowed' : 'pointer',
             }}
           >
-            {enviando ? 'Soltando...' : cooldownActivo ? `Espera ${cooldownRestante}s` : '🔥 SOLTAR'}
+            {enviando ? 'Soltando...' : cooldownActivo ? `Espera ${cooldownRestante}s` : !turnstileToken ? '⏳ Verificando...' : '🔥 SOLTAR'}
           </button>
 
           <button onClick={() => { setPantalla('feed'); setError(''); }} style={S.btnSecundario}>
@@ -1476,7 +1474,6 @@ export default function FireApp() {
               </div>
             </button>
 
-            {/* Métodos de pago */}
             <div style={S.paymentMethods}>
               <p style={S.paymentTitle}>Aceptamos</p>
               <div style={S.paymentIcons}>
@@ -1509,7 +1506,7 @@ export default function FireApp() {
         </div>
       )}
 
-      {/* Modal: Info con IMPORTANTE y Términos integrados */}
+      {/* Modal: Info */}
       {mostrarInfo && (
         <div style={S.overlay} onClick={() => setMostrarInfo(false)}>
           <div style={{...S.modal, maxHeight: '85vh', overflowY: 'auto'}} onClick={(e) => e.stopPropagation()}>
@@ -1519,7 +1516,6 @@ export default function FireApp() {
             </div>
             <p style={S.modalTagline}>Pensamientos anónimos a 1km de ti</p>
             
-            {/* Grid mejorado con colores */}
             <div style={S.infoGridNew}>
               <div style={{...S.infoItemNew, backgroundColor: '#1E3A5F'}}>
                 <span style={S.infoIconNew}>📍</span>
@@ -1551,7 +1547,6 @@ export default function FireApp() {
               <p style={S.ruleText}>Amenazar con nombres, contenido de menores, cosas ilegales</p>
             </div>
 
-            {/* IMPORTANTE */}
             <div style={S.importantBox}>
               <p style={S.importantTitle}>⚠️ IMPORTANTE</p>
               <p style={S.importantText}>
@@ -1559,7 +1554,6 @@ export default function FireApp() {
               </p>
             </div>
 
-            {/* Términos y Privacidad integrados */}
             <div style={S.termsSection}>
               <p style={S.termsSectionTitle}>📜 TÉRMINOS Y PRIVACIDAD</p>
               
@@ -1666,7 +1660,6 @@ const S = {
     position: 'relative',
   },
   
-  // Ubicación error
   ubicacionError: {
     display: 'flex',
     flexDirection: 'column',
@@ -1676,1056 +1669,349 @@ const S = {
     padding: '24px',
     textAlign: 'center',
   },
-  ubicacionIcono: {
-    fontSize: '72px',
-    marginBottom: '24px',
-  },
-  ubicacionTitulo: {
-    color: COLORS.gold,
-    fontSize: '24px',
-    fontWeight: '700',
-    marginBottom: '12px',
-  },
-  ubicacionTexto: {
-    color: COLORS.gray,
-    fontSize: '16px',
-    lineHeight: '1.6',
-    marginBottom: '32px',
-  },
+  ubicacionIcono: { fontSize: '72px', marginBottom: '24px' },
+  ubicacionTitulo: { color: COLORS.gold, fontSize: '24px', fontWeight: '700', marginBottom: '12px' },
+  ubicacionTexto: { color: COLORS.gray, fontSize: '16px', lineHeight: '1.6', marginBottom: '32px' },
   
-  // Header
   header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '14px 16px',
-    position: 'sticky',
-    top: 0,
-    zIndex: 100,
-    backgroundColor: COLORS.bgPrimary,
-    borderBottom: `1px solid ${COLORS.bgSecondary}`,
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '14px 16px', position: 'sticky', top: 0, zIndex: 100,
+    backgroundColor: COLORS.bgPrimary, borderBottom: `1px solid ${COLORS.bgSecondary}`,
   },
   infoBtn: {
-    width: '36px',
-    height: '36px',
-    borderRadius: '50%',
-    border: `1px solid ${COLORS.purple}`,
-    background: 'transparent',
-    color: COLORS.purple,
-    fontSize: '16px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    transition: 'all 0.2s ease',
+    width: '36px', height: '36px', borderRadius: '50%',
+    border: `1px solid ${COLORS.purple}`, background: 'transparent',
+    color: COLORS.purple, fontSize: '16px', fontWeight: '600', cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease',
   },
-  logoWrap: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '4px',
-  },
-  logoFire: {
-    fontSize: '22px',
-    fontWeight: '700',
-    color: COLORS.orange,
-    letterSpacing: '1px',
-  },
-  logoNotes: {
-    fontSize: '22px',
-    fontWeight: '700',
-    color: COLORS.white,
-    letterSpacing: '1px',
-  },
-  headerRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-  },
+  logoWrap: { display: 'flex', alignItems: 'center', gap: '4px' },
+  logoFire: { fontSize: '22px', fontWeight: '700', color: COLORS.orange, letterSpacing: '1px' },
+  logoNotes: { fontSize: '22px', fontWeight: '700', color: COLORS.white, letterSpacing: '1px' },
+  headerRight: { display: 'flex', alignItems: 'center', gap: '12px' },
   contadorWrap: {
-    display: 'flex',
-    alignItems: 'center',
-    cursor: 'pointer',
-    padding: '6px 12px',
-    borderRadius: '20px',
-    backgroundColor: COLORS.bgSecondary,
+    display: 'flex', alignItems: 'center', cursor: 'pointer',
+    padding: '6px 12px', borderRadius: '20px', backgroundColor: COLORS.bgSecondary,
   },
-  contadorNotas: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '4px',
-  },
-  contadorInfinito: {
-    fontSize: '20px',
-    fontWeight: 'bold',
-    color: COLORS.gold,
-  },
+  contadorNotas: { display: 'flex', alignItems: 'center', gap: '4px' },
+  contadorInfinito: { fontSize: '20px', fontWeight: 'bold', color: COLORS.gold },
   
-  // Debug
   debugBar: {
-    backgroundColor: COLORS.bgSecondary,
-    borderBottom: `1px solid ${COLORS.bgCard}`,
-    padding: '6px 12px',
-    fontSize: '10px',
-    color: COLORS.gray,
-    fontFamily: 'monospace',
-    textAlign: 'center',
+    backgroundColor: COLORS.bgSecondary, borderBottom: `1px solid ${COLORS.bgCard}`,
+    padding: '6px 12px', fontSize: '10px', color: COLORS.gray, fontFamily: 'monospace', textAlign: 'center',
   },
   
-  // Tab Bar
-  tabBar: {
-    display: 'flex',
-    backgroundColor: COLORS.bgPrimary,
-    borderBottom: `1px solid ${COLORS.bgSecondary}`,
-  },
+  tabBar: { display: 'flex', backgroundColor: COLORS.bgPrimary, borderBottom: `1px solid ${COLORS.bgSecondary}` },
   tab: {
-    flex: 1,
-    padding: '14px',
-    background: 'transparent',
-    border: 'none',
-    color: COLORS.gray,
-    fontSize: '14px',
-    fontWeight: '500',
-    cursor: 'pointer',
-    fontFamily: "'Space Grotesk', sans-serif",
-    borderBottom: '2px solid transparent',
-    transition: 'all 0.2s ease',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flex: 1, padding: '14px', background: 'transparent', border: 'none',
+    color: COLORS.gray, fontSize: '14px', fontWeight: '500', cursor: 'pointer',
+    fontFamily: "'Space Grotesk', sans-serif", borderBottom: '2px solid transparent',
+    transition: 'all 0.2s ease', display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
-  tabActive: {
-    color: COLORS.orange,
-    borderBottomColor: COLORS.orange,
-  },
+  tabActive: { color: COLORS.orange, borderBottomColor: COLORS.orange },
   badge: {
-    backgroundColor: COLORS.purple,
-    color: COLORS.white,
-    fontSize: '11px',
-    fontWeight: '600',
-    padding: '2px 6px',
-    borderRadius: '10px',
-    marginLeft: '6px',
+    backgroundColor: COLORS.purple, color: COLORS.white, fontSize: '11px',
+    fontWeight: '600', padding: '2px 6px', borderRadius: '10px', marginLeft: '6px',
   },
   
-  // Zona indicador
   zonaIndicador: {
-    textAlign: 'center',
-    padding: '10px 16px',
-    fontSize: '13px',
-    color: COLORS.gray,
-    backgroundColor: COLORS.bgSecondary,
-    borderBottom: `1px solid ${COLORS.bgCard}`,
+    textAlign: 'center', padding: '10px 16px', fontSize: '13px',
+    color: COLORS.gray, backgroundColor: COLORS.bgSecondary, borderBottom: `1px solid ${COLORS.bgCard}`,
   },
   
-  // Cooldown banner
   cooldownBanner: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '8px',
-    padding: '10px 16px',
-    backgroundColor: `${COLORS.purple}15`,
-    borderBottom: `1px solid ${COLORS.purple}30`,
-    color: COLORS.purpleLight,
-    fontSize: '13px',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+    padding: '10px 16px', backgroundColor: `${COLORS.purple}15`,
+    borderBottom: `1px solid ${COLORS.purple}30`, color: COLORS.purpleLight, fontSize: '13px',
   },
   
-  // Stats mis notas
   misNotasStats: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: '20px',
-    gap: '32px',
-    backgroundColor: COLORS.bgSecondary,
+    display: 'flex', justifyContent: 'center', alignItems: 'center',
+    padding: '20px', gap: '32px', backgroundColor: COLORS.bgSecondary,
     borderBottom: `1px solid ${COLORS.bgCard}`,
   },
-  statItem: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-  },
-  statNumber: {
-    fontSize: '28px',
-    fontWeight: '700',
-    color: COLORS.gold,
-  },
-  statLabel: {
-    fontSize: '12px',
-    color: COLORS.gray,
-    marginTop: '4px',
-  },
-  statDivider: {
-    width: '1px',
-    height: '40px',
-    backgroundColor: COLORS.bgCard,
-  },
+  statItem: { display: 'flex', flexDirection: 'column', alignItems: 'center' },
+  statNumber: { fontSize: '28px', fontWeight: '700', color: COLORS.gold },
+  statLabel: { fontSize: '12px', color: COLORS.gray, marginTop: '4px' },
+  statDivider: { width: '1px', height: '40px', backgroundColor: COLORS.bgCard },
   
-  // Feed
-  feed: {
-    padding: '16px',
-    paddingBottom: '100px',
-    minHeight: 'calc(100dvh - 150px)',
-  },
+  feed: { padding: '16px', paddingBottom: '100px', minHeight: 'calc(100dvh - 150px)' },
   empty: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: '50vh',
-    gap: '8px',
+    display: 'flex', flexDirection: 'column', alignItems: 'center',
+    justifyContent: 'center', minHeight: '50vh', gap: '8px',
   },
-  emptyTitle: {
-    color: COLORS.white,
-    fontSize: '18px',
-    fontWeight: '600',
-  },
-  emptyText: {
-    color: COLORS.gray,
-    fontSize: '14px',
-    textAlign: 'center',
-  },
+  emptyTitle: { color: COLORS.white, fontSize: '18px', fontWeight: '600' },
+  emptyText: { color: COLORS.gray, fontSize: '14px', textAlign: 'center' },
   spinner: {
-    width: '36px',
-    height: '36px',
-    border: `3px solid ${COLORS.bgSecondary}`,
-    borderTop: `3px solid ${COLORS.purple}`,
-    borderRadius: '50%',
-    animation: 'spin 1s linear infinite',
+    width: '36px', height: '36px', border: `3px solid ${COLORS.bgSecondary}`,
+    borderTop: `3px solid ${COLORS.purple}`, borderRadius: '50%', animation: 'spin 1s linear infinite',
   },
   
-  // Notas
-  notasGrid: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
+  notasGrid: { display: 'flex', flexDirection: 'column', gap: '16px' },
   nota: {
-    position: 'relative',
-    backgroundColor: COLORS.notePaper,
-    borderRadius: '8px',
-    padding: '18px',
-    overflow: 'hidden',
-    animation: 'slideUp 0.3s ease',
+    position: 'relative', backgroundColor: COLORS.notePaper,
+    borderRadius: '8px', padding: '18px', overflow: 'hidden', animation: 'slideUp 0.3s ease',
   },
-  miNota: {
-    borderLeft: `4px solid ${COLORS.purple}`,
-  },
-  notaHot: {
-    position: 'absolute',
-    top: '8px',
-    right: '8px',
-    fontSize: '20px',
-    animation: 'pulse 1s ease infinite',
-  },
+  notaHot: { position: 'absolute', top: '8px', right: '8px', fontSize: '20px', animation: 'pulse 1s ease infinite' },
   tuNotaBadge: {
-    position: 'absolute',
-    top: '8px',
-    right: '8px',
-    backgroundColor: COLORS.purple,
-    color: COLORS.white,
-    fontSize: '10px',
-    fontWeight: '600',
-    padding: '3px 10px',
-    borderRadius: '12px',
+    position: 'absolute', top: '8px', right: '8px', backgroundColor: COLORS.purple,
+    color: COLORS.white, fontSize: '10px', fontWeight: '600', padding: '3px 10px', borderRadius: '12px',
   },
   notaLines: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     background: 'repeating-linear-gradient(0deg, transparent, transparent 27px, rgba(0,0,0,0.03) 27px, rgba(0,0,0,0.03) 28px)',
     pointerEvents: 'none',
   },
   notaTexto: {
-    color: COLORS.noteText,
-    fontSize: '15px',
-    lineHeight: '1.6',
-    fontFamily: "'Space Grotesk', sans-serif",
-    position: 'relative',
-    zIndex: 1,
-    margin: 0,
-    wordBreak: 'break-word',
+    color: COLORS.noteText, fontSize: '15px', lineHeight: '1.6',
+    fontFamily: "'Space Grotesk', sans-serif", position: 'relative',
+    zIndex: 1, margin: 0, wordBreak: 'break-word',
   },
   notaFooter: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: '14px',
-    position: 'relative',
-    zIndex: 1,
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    marginTop: '14px', position: 'relative', zIndex: 1,
   },
-  notaMeta: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  notaMetaCol: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '2px',
-  },
-  notaTiempo: {
-    fontSize: '12px',
-    color: '#8B7355',
-    fontWeight: '500',
-  },
+  notaMeta: { display: 'flex', alignItems: 'center', gap: '8px' },
+  notaMetaCol: { display: 'flex', flexDirection: 'column', gap: '2px' },
+  notaTiempo: { fontSize: '12px', color: '#8B7355', fontWeight: '500' },
   notaDistancia: {
-    fontSize: '11px',
-    color: '#A0937D',
-    backgroundColor: 'rgba(0,0,0,0.05)',
-    padding: '2px 6px',
-    borderRadius: '8px',
+    fontSize: '11px', color: '#A0937D', backgroundColor: 'rgba(0,0,0,0.05)',
+    padding: '2px 6px', borderRadius: '8px',
   },
-  notaExpira: {
-    fontSize: '11px',
-    color: COLORS.danger,
-    fontWeight: '500',
-  },
-  notaActions: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
+  notaExpira: { fontSize: '11px', color: COLORS.danger, fontWeight: '500' },
+  notaActions: { display: 'flex', alignItems: 'center', gap: '8px' },
   reportBtn: {
-    background: 'transparent',
-    border: 'none',
-    fontSize: '14px',
-    cursor: 'pointer',
-    padding: '6px',
-    color: '#A0937D',
-    opacity: 0.5,
-    transition: 'opacity 0.2s',
+    background: 'transparent', border: 'none', fontSize: '14px',
+    cursor: 'pointer', padding: '6px', color: '#A0937D', opacity: 0.5, transition: 'opacity 0.2s',
   },
   fireBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    background: 'transparent',
-    border: '1.5px solid rgba(0,0,0,0.1)',
-    borderRadius: '20px',
-    padding: '6px 12px',
-    cursor: 'pointer',
-    transition: 'all 0.2s ease',
-    fontFamily: "'Space Grotesk', sans-serif",
+    display: 'flex', alignItems: 'center', gap: '6px', background: 'transparent',
+    border: '1.5px solid rgba(0,0,0,0.1)', borderRadius: '20px', padding: '6px 12px',
+    cursor: 'pointer', transition: 'all 0.2s ease', fontFamily: "'Space Grotesk', sans-serif",
   },
   fireCount: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '10px 14px',
-    borderRadius: '16px',
-    border: '2px solid transparent',
-    transition: 'all 0.2s ease',
+    display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px',
+    borderRadius: '16px', border: '2px solid transparent', transition: 'all 0.2s ease',
   },
   
-  // Escribir
   escribir: {
-    padding: '24px 20px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '20px',
-    minHeight: 'calc(100dvh - 70px)',
+    padding: '24px 20px', display: 'flex', flexDirection: 'column',
+    gap: '20px', minHeight: 'calc(100dvh - 70px)',
   },
   papelEscribir: {
-    position: 'relative',
-    backgroundColor: COLORS.notePaper,
-    borderRadius: '8px',
-    padding: '20px',
-    minHeight: '200px',
-    boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+    position: 'relative', backgroundColor: COLORS.notePaper, borderRadius: '8px',
+    padding: '20px', minHeight: '200px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
   },
   textarea: {
-    width: '100%',
-    minHeight: '160px',
-    background: 'transparent',
-    border: 'none',
-    outline: 'none',
-    color: COLORS.noteText,
-    fontSize: '16px',
-    fontFamily: "'Space Grotesk', sans-serif",
-    lineHeight: '28px',
-    resize: 'none',
-    position: 'relative',
-    zIndex: 1,
+    width: '100%', minHeight: '160px', background: 'transparent', border: 'none',
+    outline: 'none', color: COLORS.noteText, fontSize: '16px',
+    fontFamily: "'Space Grotesk', sans-serif", lineHeight: '28px', resize: 'none',
+    position: 'relative', zIndex: 1,
   },
   charCount: {
-    position: 'absolute',
-    bottom: '10px',
-    right: '14px',
-    fontSize: '12px',
-    color: '#8B7355',
-    fontFamily: 'monospace',
-    zIndex: 1,
+    position: 'absolute', bottom: '10px', right: '14px', fontSize: '12px',
+    color: '#8B7355', fontFamily: 'monospace', zIndex: 1,
   },
   errorText: {
-    color: COLORS.danger,
-    fontSize: '13px',
-    textAlign: 'center',
-    margin: 0,
-    padding: '8px 12px',
-    backgroundColor: `${COLORS.danger}15`,
-    borderRadius: '8px',
+    color: COLORS.danger, fontSize: '13px', textAlign: 'center', margin: 0,
+    padding: '8px 12px', backgroundColor: `${COLORS.danger}15`, borderRadius: '8px',
   },
-  cooldownText: {
-    color: COLORS.purple,
-    fontSize: '13px',
-    textAlign: 'center',
-    margin: 0,
-  },
+  cooldownText: { color: COLORS.purple, fontSize: '13px', textAlign: 'center', margin: 0 },
   
-  // Buttons
   btnPrimario: {
-    width: '100%',
-    padding: '16px',
-    border: 'none',
-    borderRadius: '12px',
+    width: '100%', padding: '16px', border: 'none', borderRadius: '12px',
     background: `linear-gradient(135deg, ${COLORS.orange}, ${COLORS.purple})`,
-    color: COLORS.white,
-    fontSize: '16px',
-    fontWeight: '600',
-    fontFamily: "'Space Grotesk', sans-serif",
-    letterSpacing: '1px',
-    cursor: 'pointer',
-    boxShadow: '0 4px 20px rgba(155, 89, 182, 0.4)',
-    transition: 'transform 0.2s, box-shadow 0.2s',
+    color: COLORS.white, fontSize: '16px', fontWeight: '600',
+    fontFamily: "'Space Grotesk', sans-serif", letterSpacing: '1px', cursor: 'pointer',
+    boxShadow: '0 4px 20px rgba(155, 89, 182, 0.4)', transition: 'transform 0.2s, box-shadow 0.2s',
   },
   btnSecundario: {
-    background: 'transparent',
-    border: 'none',
-    color: COLORS.gray,
-    fontSize: '14px',
-    cursor: 'pointer',
-    fontFamily: "'Space Grotesk', sans-serif",
-    padding: '12px',
+    background: 'transparent', border: 'none', color: COLORS.gray, fontSize: '14px',
+    cursor: 'pointer', fontFamily: "'Space Grotesk', sans-serif", padding: '12px',
   },
   btnTerciario: {
-    width: '100%',
-    padding: '12px',
-    borderRadius: '8px',
-    border: 'none',
-    background: 'transparent',
-    color: COLORS.gray,
-    fontSize: '14px',
-    cursor: 'pointer',
-    marginTop: '8px',
-    fontFamily: "'Space Grotesk', sans-serif",
+    width: '100%', padding: '12px', borderRadius: '8px', border: 'none',
+    background: 'transparent', color: COLORS.gray, fontSize: '14px',
+    cursor: 'pointer', marginTop: '8px', fontFamily: "'Space Grotesk', sans-serif",
   },
   btnDanger: {
-    width: '100%',
-    padding: '14px',
-    borderRadius: '12px',
-    border: 'none',
-    background: COLORS.danger,
-    color: COLORS.white,
-    fontSize: '14px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    marginBottom: '8px',
-  },
-  linkBtn: {
-    background: 'none',
-    border: 'none',
-    color: COLORS.gray,
-    fontSize: '12px',
-    textDecoration: 'underline',
-    cursor: 'pointer',
-    marginTop: '8px',
-    marginBottom: '16px',
-    width: '100%',
+    width: '100%', padding: '14px', borderRadius: '12px', border: 'none',
+    background: COLORS.danger, color: COLORS.white, fontSize: '14px',
+    fontWeight: '600', cursor: 'pointer', marginBottom: '8px',
   },
   
-  // FAB
   fab: {
-    position: 'fixed',
-    bottom: '24px',
-    right: '24px',
-    width: '64px',
-    height: '64px',
-    borderRadius: '50%',
-    border: 'none',
+    position: 'fixed', bottom: '24px', right: '24px', width: '64px', height: '64px',
+    borderRadius: '50%', border: 'none',
     background: `linear-gradient(135deg, ${COLORS.orange}, ${COLORS.purple})`,
-    fontSize: '26px',
-    cursor: 'pointer',
-    boxShadow: '0 4px 24px rgba(155, 89, 182, 0.5)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 99,
+    fontSize: '26px', cursor: 'pointer', boxShadow: '0 4px 24px rgba(155, 89, 182, 0.5)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99,
     transition: 'transform 0.2s, box-shadow 0.2s',
   },
   
-  // Toast
   toast: {
-    position: 'fixed',
-    top: '80px',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    backgroundColor: COLORS.purple,
-    color: COLORS.white,
-    padding: '14px 28px',
-    borderRadius: '24px',
-    fontSize: '14px',
-    fontWeight: '600',
-    fontFamily: "'Space Grotesk', sans-serif",
-    zIndex: 200,
-    boxShadow: '0 4px 24px rgba(155, 89, 182, 0.5)',
-    animation: 'fadeIn 0.3s ease',
+    position: 'fixed', top: '80px', left: '50%', transform: 'translateX(-50%)',
+    backgroundColor: COLORS.purple, color: COLORS.white, padding: '14px 28px',
+    borderRadius: '24px', fontSize: '14px', fontWeight: '600',
+    fontFamily: "'Space Grotesk', sans-serif", zIndex: 200,
+    boxShadow: '0 4px 24px rgba(155, 89, 182, 0.5)', animation: 'fadeIn 0.3s ease',
   },
   
-  // Overlay & Modal
   overlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.9)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 150,
-    padding: '20px',
+    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center',
+    justifyContent: 'center', zIndex: 150, padding: '20px',
   },
   modal: {
-    backgroundColor: COLORS.bgSecondary,
-    borderRadius: '20px',
-    padding: '28px',
-    maxWidth: '380px',
-    width: '100%',
-    border: `1px solid ${COLORS.bgCard}`,
-    animation: 'slideUp 0.3s ease',
+    backgroundColor: COLORS.bgSecondary, borderRadius: '20px', padding: '28px',
+    maxWidth: '380px', width: '100%', border: `1px solid ${COLORS.bgCard}`, animation: 'slideUp 0.3s ease',
   },
-  modalHeader: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '8px',
-    marginBottom: '16px',
-  },
+  modalHeader: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', marginBottom: '16px' },
   modalTitle: {
-    fontSize: '22px',
-    fontWeight: '700',
-    textAlign: 'center',
-    color: COLORS.gold,
-    fontFamily: "'Space Grotesk', sans-serif",
-    margin: 0,
+    fontSize: '22px', fontWeight: '700', textAlign: 'center', color: COLORS.gold,
+    fontFamily: "'Space Grotesk', sans-serif", margin: 0,
   },
-  modalTagline: {
-    fontSize: '14px',
-    color: COLORS.gray,
-    textAlign: 'center',
-    marginBottom: '20px',
-    fontStyle: 'italic',
-  },
-  modalDesc: {
-    fontSize: '15px',
-    color: COLORS.grayLight,
-    textAlign: 'center',
-    marginBottom: '20px',
-    lineHeight: '1.6',
-  },
-  modalSub: {
-    fontSize: '14px',
-    color: COLORS.gray,
-    textAlign: 'center',
-    marginBottom: '20px',
-  },
+  modalTagline: { fontSize: '14px', color: COLORS.gray, textAlign: 'center', marginBottom: '20px', fontStyle: 'italic' },
+  modalDesc: { fontSize: '15px', color: COLORS.grayLight, textAlign: 'center', marginBottom: '20px', lineHeight: '1.6' },
+  modalSub: { fontSize: '14px', color: COLORS.gray, textAlign: 'center', marginBottom: '20px' },
   
-  // Welcome features
-  welcomeFeatures: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-    marginBottom: '24px',
-  },
+  welcomeFeatures: { display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' },
   welcomeFeature: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '12px',
-    padding: '12px 16px',
-    backgroundColor: COLORS.bgCard,
-    borderRadius: '12px',
-    fontSize: '14px',
-    color: COLORS.grayLight,
+    display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px',
+    backgroundColor: COLORS.bgCard, borderRadius: '12px', fontSize: '14px', color: COLORS.grayLight,
   },
   
-  // Info grid
-  infoGrid: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '12px',
-    marginBottom: '20px',
-  },
-  infoItem: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: '10px',
-    padding: '12px',
-    backgroundColor: COLORS.bgCard,
-    borderRadius: '12px',
-  },
-  infoIcon: {
-    fontSize: '20px',
-    flexShrink: 0,
-  },
-  
-  // Info grid mejorado con colores
-  infoGridNew: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '12px',
-    marginBottom: '20px',
-  },
+  infoGridNew: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' },
   infoItemNew: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    textAlign: 'center',
-    padding: '16px 12px',
-    borderRadius: '16px',
-    minHeight: '110px',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+    textAlign: 'center', padding: '16px 12px', borderRadius: '16px', minHeight: '110px',
   },
-  infoIconNew: {
-    fontSize: '28px',
-    marginBottom: '8px',
-  },
-  infoTitleNew: {
-    fontSize: '15px',
-    fontWeight: '700',
-    color: COLORS.white,
-    marginBottom: '4px',
-  },
-  infoDescNew: {
-    fontSize: '12px',
-    color: COLORS.grayLight,
-    margin: 0,
-    lineHeight: '1.4',
-  },
+  infoIconNew: { fontSize: '28px', marginBottom: '8px' },
+  infoTitleNew: { fontSize: '15px', fontWeight: '700', color: COLORS.white, marginBottom: '4px' },
+  infoDescNew: { fontSize: '12px', color: COLORS.grayLight, margin: 0, lineHeight: '1.4' },
   
-  // Rules box
-  rulesBox: {
-    backgroundColor: COLORS.bgCard,
-    borderRadius: '12px',
-    padding: '16px',
-    marginBottom: '16px',
-  },
-  rulesTitle: {
-    fontSize: '13px',
-    fontWeight: '600',
-    color: COLORS.success,
-    marginBottom: '4px',
-  },
-  ruleText: {
-    fontSize: '12px',
-    color: COLORS.grayLight,
-    margin: 0,
-    lineHeight: '1.5',
-  },
+  rulesBox: { backgroundColor: COLORS.bgCard, borderRadius: '12px', padding: '16px', marginBottom: '16px' },
+  rulesTitle: { fontSize: '13px', fontWeight: '600', color: COLORS.success, marginBottom: '4px' },
+  ruleText: { fontSize: '12px', color: COLORS.grayLight, margin: 0, lineHeight: '1.5' },
   
-  // Warning box
-  warningBox: {
-    backgroundColor: `${COLORS.gold}15`,
-    border: `1px solid ${COLORS.gold}40`,
-    borderRadius: '12px',
-    padding: '14px',
-    marginBottom: '8px',
-  },
-  warningTitle: {
-    fontSize: '13px',
-    fontWeight: '600',
-    color: COLORS.gold,
-    textAlign: 'center',
-    marginBottom: '4px',
-  },
-  warningText: {
-    fontSize: '12px',
-    color: COLORS.grayLight,
-    textAlign: 'center',
-    margin: 0,
-    lineHeight: '1.5',
-  },
-  
-  // Modal options
   modalOpt: {
-    width: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '14px',
-    padding: '14px 16px',
-    borderRadius: '12px',
-    border: `1px solid ${COLORS.bgCard}`,
-    background: COLORS.bgPrimary,
-    cursor: 'pointer',
-    marginBottom: '10px',
-    textAlign: 'left',
-    color: COLORS.white,
-    fontFamily: "'Space Grotesk', sans-serif",
-    transition: 'border-color 0.2s',
+    width: '100%', display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 16px',
+    borderRadius: '12px', border: `1px solid ${COLORS.bgCard}`, background: COLORS.bgPrimary,
+    cursor: 'pointer', marginBottom: '10px', textAlign: 'left', color: COLORS.white,
+    fontFamily: "'Space Grotesk', sans-serif", transition: 'border-color 0.2s',
   },
-  modalOptIcon: {
-    fontSize: '28px',
-    flexShrink: 0,
-  },
-  modalOptDesc: {
-    fontSize: '12px',
-    color: COLORS.gray,
-    margin: '4px 0 0 0',
-  },
+  modalOptIcon: { fontSize: '28px', flexShrink: 0 },
+  modalOptDesc: { fontSize: '12px', color: COLORS.gray, margin: '4px 0 0 0' },
   
-  // IMPORTANTE box (antes era warning/ojo)
   importantBox: {
-    backgroundColor: `${COLORS.gold}15`,
-    border: `2px solid ${COLORS.gold}50`,
-    borderRadius: '12px',
-    padding: '16px',
-    marginBottom: '16px',
+    backgroundColor: `${COLORS.gold}15`, border: `2px solid ${COLORS.gold}50`,
+    borderRadius: '12px', padding: '16px', marginBottom: '16px',
   },
-  importantTitle: {
-    fontSize: '14px',
-    fontWeight: '700',
-    color: COLORS.gold,
-    textAlign: 'center',
-    marginBottom: '8px',
-  },
-  importantText: {
-    fontSize: '13px',
-    color: COLORS.grayLight,
-    textAlign: 'center',
-    margin: 0,
-    lineHeight: '1.5',
-  },
+  importantTitle: { fontSize: '14px', fontWeight: '700', color: COLORS.gold, textAlign: 'center', marginBottom: '8px' },
+  importantText: { fontSize: '13px', color: COLORS.grayLight, textAlign: 'center', margin: 0, lineHeight: '1.5' },
   
-  // Términos integrados
-  termsSection: {
-    backgroundColor: COLORS.bgCard,
-    borderRadius: '12px',
-    padding: '16px',
-    marginBottom: '16px',
-  },
-  termsSectionTitle: {
-    fontSize: '13px',
-    fontWeight: '600',
-    color: COLORS.purple,
-    textAlign: 'center',
-    marginBottom: '12px',
-  },
-  termsContent: {
-    fontSize: '11px',
-    color: COLORS.grayLight,
-    lineHeight: '1.6',
-  },
-  termsSubtitle: {
-    fontSize: '12px',
-    fontWeight: '600',
-    color: COLORS.white,
-    marginTop: '10px',
-    marginBottom: '4px',
-  },
-  termsText: {
-    margin: 0,
-    marginBottom: '8px',
-  },
-  termsUpdate: {
-    fontSize: '10px',
-    color: COLORS.gray,
-    textAlign: 'center',
-    fontStyle: 'italic',
-    marginTop: '12px',
-  },
+  termsSection: { backgroundColor: COLORS.bgCard, borderRadius: '12px', padding: '16px', marginBottom: '16px' },
+  termsSectionTitle: { fontSize: '13px', fontWeight: '600', color: COLORS.purple, textAlign: 'center', marginBottom: '12px' },
+  termsContent: { fontSize: '11px', color: COLORS.grayLight, lineHeight: '1.6' },
+  termsSubtitle: { fontSize: '12px', fontWeight: '600', color: COLORS.white, marginTop: '10px', marginBottom: '4px' },
+  termsText: { margin: 0, marginBottom: '8px' },
+  termsUpdate: { fontSize: '10px', color: COLORS.gray, textAlign: 'center', fontStyle: 'italic', marginTop: '12px' },
   
-  // Métodos de pago
   paymentMethods: {
-    backgroundColor: COLORS.bgCard,
-    borderRadius: '12px',
-    padding: '14px',
-    marginBottom: '16px',
-    textAlign: 'center',
+    backgroundColor: COLORS.bgCard, borderRadius: '12px', padding: '14px', marginBottom: '16px', textAlign: 'center',
   },
-  paymentTitle: {
-    fontSize: '11px',
-    color: COLORS.gray,
-    marginBottom: '8px',
-  },
-  paymentIcons: {
-    display: 'flex',
-    justifyContent: 'center',
-    gap: '16px',
-    marginBottom: '6px',
-  },
-  paymentIcon: {
-    fontSize: '24px',
-  },
-  paymentText: {
-    fontSize: '12px',
-    color: COLORS.grayLight,
-    fontWeight: '500',
-  },
+  paymentTitle: { fontSize: '11px', color: COLORS.gray, marginBottom: '8px' },
+  paymentIcons: { display: 'flex', justifyContent: 'center', gap: '16px', marginBottom: '6px' },
+  paymentIcon: { fontSize: '24px' },
+  paymentText: { fontSize: '12px', color: COLORS.grayLight, fontWeight: '500' },
   
-  // Legal (backup)
-  legalText: {
-    marginTop: '16px',
-    fontSize: '12px',
-    color: COLORS.grayLight,
-    lineHeight: '1.7',
-  },
-  legalTitle: {
-    fontSize: '14px',
-    color: COLORS.gold,
-    fontWeight: '600',
-    marginBottom: '8px',
-  },
-  
-  // ============================================================
-  // EFECTO QUEMÁNDOSE
-  // ============================================================
   burningIndicator: {
-    position: 'absolute',
-    top: '-12px',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    fontSize: '12px',
-    backgroundColor: COLORS.orange,
-    color: COLORS.white,
-    padding: '2px 10px',
-    borderRadius: '10px',
-    fontWeight: '600',
-    zIndex: 10,
-    whiteSpace: 'nowrap',
-    boxShadow: '0 2px 8px rgba(255, 107, 53, 0.4)',
+    position: 'absolute', top: '-12px', left: '50%', transform: 'translateX(-50%)',
+    fontSize: '12px', backgroundColor: COLORS.orange, color: COLORS.white,
+    padding: '2px 10px', borderRadius: '10px', fontWeight: '600', zIndex: 10,
+    whiteSpace: 'nowrap', boxShadow: '0 2px 8px rgba(255, 107, 53, 0.4)',
   },
   tuNotaBadgeFeed: {
-    position: 'absolute',
-    top: '8px',
-    right: '8px',
-    backgroundColor: COLORS.purple,
-    color: COLORS.white,
-    fontSize: '10px',
-    fontWeight: '600',
-    padding: '3px 8px',
-    borderRadius: '8px',
-    zIndex: 5,
+    position: 'absolute', top: '8px', right: '8px', backgroundColor: COLORS.purple,
+    color: COLORS.white, fontSize: '10px', fontWeight: '600', padding: '3px 8px', borderRadius: '8px', zIndex: 5,
   },
   
-  // ============================================================
-  // MAPA DE CALOR
-  // ============================================================
   mapaContainer: {
-    padding: '20px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '20px',
-    minHeight: 'calc(100dvh - 160px)',
+    padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px', minHeight: 'calc(100dvh - 160px)',
   },
-  mapaHeader: {
-    textAlign: 'center',
-  },
+  mapaHeader: { textAlign: 'center' },
   mapaTitle: {
-    fontSize: '20px',
-    fontWeight: '700',
-    color: COLORS.white,
-    margin: 0,
+    fontSize: '20px', fontWeight: '700', color: COLORS.white, margin: 0,
     fontFamily: "'Space Grotesk', sans-serif",
   },
-  mapaSubtitle: {
-    fontSize: '13px',
-    color: COLORS.gray,
-    marginTop: '4px',
-  },
-  mapaVisual: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '16px',
-  },
+  mapaSubtitle: { fontSize: '13px', color: COLORS.gray, marginTop: '4px' },
+  mapaVisual: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' },
   mapaCirculo: {
-    position: 'relative',
-    width: '280px',
-    height: '280px',
-    borderRadius: '50%',
-    backgroundColor: COLORS.bgCard,
-    border: `2px solid ${COLORS.purple}40`,
+    position: 'relative', width: '280px', height: '280px', borderRadius: '50%',
+    backgroundColor: COLORS.bgCard, border: `2px solid ${COLORS.purple}40`,
     boxShadow: '0 4px 20px rgba(155, 89, 182, 0.2)',
   },
   mapaCentro: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    transform: 'translate(-50%, -50%)',
-    fontSize: '24px',
-    zIndex: 10,
+    position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+    fontSize: '24px', zIndex: 10,
   },
   mapaCircle500: {
-    position: 'absolute',
-    top: '25%',
-    left: '25%',
-    width: '50%',
-    height: '50%',
-    borderRadius: '50%',
-    border: `1px dashed ${COLORS.gray}40`,
-    pointerEvents: 'none',
+    position: 'absolute', top: '25%', left: '25%', width: '50%', height: '50%',
+    borderRadius: '50%', border: `1px dashed ${COLORS.gray}40`, pointerEvents: 'none',
   },
   mapaCircle1000: {
-    position: 'absolute',
-    top: '5%',
-    left: '5%',
-    width: '90%',
-    height: '90%',
-    borderRadius: '50%',
-    border: `1px dashed ${COLORS.gray}30`,
-    pointerEvents: 'none',
+    position: 'absolute', top: '5%', left: '5%', width: '90%', height: '90%',
+    borderRadius: '50%', border: `1px dashed ${COLORS.gray}30`, pointerEvents: 'none',
   },
-  mapaLeyenda: {
-    display: 'flex',
-    justifyContent: 'center',
-    gap: '16px',
-    fontSize: '12px',
-    color: COLORS.gray,
-  },
+  mapaLeyenda: { display: 'flex', justifyContent: 'center', gap: '16px', fontSize: '12px', color: COLORS.gray },
   mapaStats: {
-    display: 'flex',
-    justifyContent: 'space-around',
-    padding: '16px',
-    backgroundColor: COLORS.bgCard,
-    borderRadius: '16px',
+    display: 'flex', justifyContent: 'space-around', padding: '16px',
+    backgroundColor: COLORS.bgCard, borderRadius: '16px',
   },
-  mapaStatItem: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '4px',
-  },
+  mapaStatItem: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' },
   mapaStatNumber: {
-    fontSize: '24px',
-    fontWeight: '700',
-    color: COLORS.white,
+    fontSize: '24px', fontWeight: '700', color: COLORS.white,
     fontFamily: "'Space Grotesk', sans-serif",
   },
   mapaStatLabel: {
-    fontSize: '11px',
-    color: COLORS.gray,
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px',
+    fontSize: '11px', color: COLORS.gray, textTransform: 'uppercase', letterSpacing: '0.5px',
   },
   mapaZonaInfo: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    padding: '24px',
-    backgroundColor: COLORS.bgSecondary,
-    borderRadius: '16px',
-    border: `1px solid ${COLORS.bgCard}`,
+    display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px',
+    backgroundColor: COLORS.bgSecondary, borderRadius: '16px', border: `1px solid ${COLORS.bgCard}`,
   },
   mapaZonaText: {
-    fontSize: '18px',
-    fontWeight: '600',
-    color: COLORS.white,
-    margin: 0,
+    fontSize: '18px', fontWeight: '600', color: COLORS.white, margin: 0,
     fontFamily: "'Space Grotesk', sans-serif",
   },
-  mapaZonaSubtext: {
-    fontSize: '13px',
-    color: COLORS.gray,
-    marginTop: '4px',
-  },
+  mapaZonaSubtext: { fontSize: '13px', color: COLORS.gray, marginTop: '4px' },
   
-  // ============================================================
-  // HISTORIAL Y ESTRELLAS DORADAS
-  // ============================================================
   historialBox: {
-    backgroundColor: COLORS.bgSecondary,
-    borderRadius: '16px',
-    padding: '16px',
-    margin: '0 16px 16px 16px',
-    border: `1px solid ${COLORS.bgCard}`,
+    backgroundColor: COLORS.bgSecondary, borderRadius: '16px', padding: '16px',
+    margin: '0 16px 16px 16px', border: `1px solid ${COLORS.bgCard}`,
   },
-  historialHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    marginBottom: '16px',
-  },
+  historialHeader: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' },
   historialTitle: {
-    fontSize: '16px',
-    fontWeight: '700',
-    color: COLORS.gold,
+    fontSize: '16px', fontWeight: '700', color: COLORS.gold,
     fontFamily: "'Space Grotesk', sans-serif",
   },
   historialStats: {
-    display: 'flex',
-    justifyContent: 'space-around',
-    marginBottom: '16px',
-    paddingBottom: '16px',
-    borderBottom: `1px solid ${COLORS.bgCard}`,
+    display: 'flex', justifyContent: 'space-around', marginBottom: '16px',
+    paddingBottom: '16px', borderBottom: `1px solid ${COLORS.bgCard}`,
   },
-  historialStatItem: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-  },
-  historialStatNumber: {
-    fontSize: '20px',
-    fontWeight: '700',
-    color: COLORS.white,
-  },
-  historialStatLabel: {
-    fontSize: '11px',
-    color: COLORS.gray,
-    marginTop: '2px',
-  },
-  estrellasSection: {
-    textAlign: 'center',
-  },
-  estrellasTitle: {
-    fontSize: '14px',
-    fontWeight: '600',
-    color: COLORS.gold,
-    marginBottom: '12px',
-  },
-  estrellasGrid: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: '10px',
-    marginBottom: '8px',
-  },
+  historialStatItem: { display: 'flex', flexDirection: 'column', alignItems: 'center' },
+  historialStatNumber: { fontSize: '20px', fontWeight: '700', color: COLORS.white },
+  historialStatLabel: { fontSize: '11px', color: COLORS.gray, marginTop: '2px' },
+  estrellasSection: { textAlign: 'center' },
+  estrellasTitle: { fontSize: '14px', fontWeight: '600', color: COLORS.gold, marginBottom: '12px' },
+  estrellasGrid: { display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '10px', marginBottom: '8px' },
   estrellaItem: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    padding: '10px 14px',
-    background: `linear-gradient(135deg, ${COLORS.bgCard}, #2a2a3a)`,
-    borderRadius: '12px',
-    border: `2px solid ${COLORS.gold}`,
-    boxShadow: '0 0 15px rgba(255, 215, 0, 0.3)',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '10px 14px',
+    background: `linear-gradient(135deg, ${COLORS.bgCard}, #2a2a3a)`, borderRadius: '12px',
+    border: `2px solid ${COLORS.gold}`, boxShadow: '0 0 15px rgba(255, 215, 0, 0.3)',
   },
-  estrellaEmoji: {
-    fontSize: '32px',
-    filter: 'drop-shadow(0 0 8px gold)',
-    animation: 'pulse 2s ease infinite',
-  },
-  estrellaFecha: {
-    fontSize: '11px',
-    color: COLORS.gold,
-    marginTop: '4px',
-    fontWeight: '600',
-  },
-  estrellaDesc: {
-    fontSize: '11px',
-    color: COLORS.gray,
-    marginTop: '8px',
-  },
-  sinEstrellas: {
-    textAlign: 'center',
-    padding: '20px',
-  },
-  sinEstrellasText: {
-    fontSize: '12px',
-    color: COLORS.gray,
-    marginTop: '8px',
-    lineHeight: '1.5',
-  },
+  estrellaEmoji: { fontSize: '32px', filter: 'drop-shadow(0 0 8px gold)', animation: 'pulse 2s ease infinite' },
+  estrellaFecha: { fontSize: '11px', color: COLORS.gold, marginTop: '4px', fontWeight: '600' },
+  estrellaDesc: { fontSize: '11px', color: COLORS.gray, marginTop: '8px' },
+  sinEstrellas: { textAlign: 'center', padding: '20px' },
+  sinEstrellasText: { fontSize: '12px', color: COLORS.gray, marginTop: '8px', lineHeight: '1.5' },
 };
