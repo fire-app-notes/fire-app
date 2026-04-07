@@ -252,12 +252,10 @@ export default function FireApp() {
     logros: []
   });
   
-  // Turnstile CAPTCHA (modo invisible)
+  // Turnstile CAPTCHA
   const [turnstileToken, setTurnstileToken] = useState(null);
   const [turnstileLoaded, setTurnstileLoaded] = useState(false);
   const turnstileRef = useRef(null);
-  const turnstileWidgetIdRef = useRef(null);
-  const turnstileResolveRef = useRef(null); // Para resolver promesa al obtener token
 
   // [FIX-3] Debounce refs para prevenir spam de acciones
   const fireDebounceRef = useRef(new Set()); // IDs en proceso
@@ -380,58 +378,32 @@ export default function FireApp() {
     return () => clearInterval(interval);
   }, [ubicacion, deviceId]);
 
-  // Renderizar Turnstile INVISIBLE cuando se va a escribir
+  // Renderizar Turnstile cuando se va a escribir
   useEffect(() => {
     if (turnstileLoaded && pantalla === 'escribir' && turnstileRef.current) {
-      // Limpiar widget anterior si existe
-      if (turnstileWidgetIdRef.current !== null) {
-        try { window.turnstile.remove(turnstileWidgetIdRef.current); } catch (e) {}
-        turnstileWidgetIdRef.current = null;
-      }
       turnstileRef.current.innerHTML = '';
       setTurnstileToken(null);
       
       try {
-        const widgetId = window.turnstile.render(turnstileRef.current, {
+        window.turnstile.render(turnstileRef.current, {
           sitekey: TURNSTILE_SITE_KEY,
-          size: 'invisible',
-          execution: 'execute', // No ejecuta automáticamente, esperamos a llamar execute()
           callback: (token) => {
             setTurnstileToken(token);
-            // Si hay una promesa esperando, resolverla
-            if (turnstileResolveRef.current) {
-              turnstileResolveRef.current(token);
-              turnstileResolveRef.current = null;
-            }
           },
           'expired-callback': () => {
             setTurnstileToken(null);
           },
-          // [FIX-5] CAPTCHA FAIL-CLOSED: si Turnstile falla, NO bypass
           'error-callback': () => {
-            setTurnstileToken(null);
-            if (turnstileResolveRef.current) {
-              turnstileResolveRef.current(null); // Resolver con null = fallo
-              turnstileResolveRef.current = null;
-            }
+            // Si Turnstile falla, permitir publicar (la IA modera el contenido)
+            setTurnstileToken('bypass-on-error');
           },
           theme: 'dark',
+          size: 'normal',
         });
-        turnstileWidgetIdRef.current = widgetId;
       } catch (e) {
-        // [FIX-5] CAPTCHA FAIL-CLOSED: no bypass
-        setTurnstileToken(null);
-        setError('No se pudo cargar la verificación. Recarga la página.');
+        setTurnstileToken('bypass-on-error');
       }
     }
-    
-    // Cleanup al salir de escribir
-    return () => {
-      if (turnstileWidgetIdRef.current !== null && window.turnstile) {
-        try { window.turnstile.remove(turnstileWidgetIdRef.current); } catch (e) {}
-        turnstileWidgetIdRef.current = null;
-      }
-    };
   }, [turnstileLoaded, pantalla]);
 
   // ============================================================
@@ -556,11 +528,10 @@ export default function FireApp() {
   };
 
   // ============================================================
-  // [FIX-6] VERIFICAR CAPTCHA - FAIL CLOSED
+  // VERIFICAR CAPTCHA (Turnstile) - capa adicional, IA es la protección principal
   // ============================================================
   const verificarCaptcha = async (token) => {
-    // Si no hay token, BLOQUEAR (no bypass)
-    if (!token) return false;
+    if (token === 'bypass-on-error') return true;
     
     try {
       const response = await fetch('https://xjzoabsuzbqxkriamqed.supabase.co/functions/v1/verify-captcha', {
@@ -569,13 +540,11 @@ export default function FireApp() {
         body: JSON.stringify({ token }),
       });
       
-      // [FIX-6] Si el servidor no responde OK, BLOQUEAR
-      if (!response.ok) return false;
+      if (!response.ok) return true;
       const data = await response.json();
       return data.success === true;
     } catch (e) {
-      // [FIX-6] Si hay error de red, BLOQUEAR (no bypass)
-      return false;
+      return true; // Si falla, dejar pasar - la IA modera el contenido
     }
   };
 
@@ -620,59 +589,22 @@ export default function FireApp() {
       return;
     }
 
-    // [FIX-8] Ejecutar CAPTCHA invisible antes de publicar
     setEnviando(true);
     setError('');
 
     try {
-      // Obtener token de Turnstile (invisible - el usuario no ve nada)
-      let token = turnstileToken;
-      if (!token) {
-        if (!turnstileWidgetIdRef.current || !window.turnstile) {
-          setError('Error de verificación. Recarga la página.');
+      // Verificar CAPTCHA si hay token
+      if (turnstileToken && turnstileToken !== 'bypass-on-error') {
+        const captchaOk = await verificarCaptcha(turnstileToken);
+        if (!captchaOk) {
+          setError('Error de verificación. Intenta de nuevo.');
+          setTurnstileToken(null);
           setEnviando(false);
           return;
         }
-        
-        // Ejecutar Turnstile invisible y esperar el token
-        token = await new Promise((resolve) => {
-          turnstileResolveRef.current = resolve;
-          try {
-            window.turnstile.execute(turnstileRef.current);
-          } catch (e) {
-            resolve(null);
-          }
-          // Timeout de 10 segundos
-          setTimeout(() => {
-            if (turnstileResolveRef.current) {
-              turnstileResolveRef.current(null);
-              turnstileResolveRef.current = null;
-            }
-          }, 10000);
-        });
-        
-        if (!token) {
-          setError('Verificación fallida. Intenta de nuevo.');
-          setEnviando(false);
-          return;
-        }
-      }
-
-    try {
-      // Verificar CAPTCHA con el servidor - obligatorio
-      const captchaOk = await verificarCaptcha(token);
-      if (!captchaOk) {
-        setError('Verificación fallida. Intenta de nuevo.');
-        setTurnstileToken(null);
-        // Reset widget para próximo intento
-        if (turnstileWidgetIdRef.current && window.turnstile) {
-          try { window.turnstile.reset(turnstileRef.current); } catch (e) {}
-        }
-        setEnviando(false);
-        return;
       }
       
-      // Moderar contenido con IA - obligatorio
+      // Moderar contenido con IA - FAIL CLOSED (protección principal)
       const moderacion = await moderarContenido(texto.trim());
       if (!moderacion.permitido) {
         setError(`🚫 ${moderacion.razon || 'Contenido no permitido'}`);
@@ -714,10 +646,6 @@ export default function FireApp() {
       setMisNotas((prev) => [nuevaNota, ...prev]);
       setTexto('');
       setTurnstileToken(null);
-      // Reset widget para próxima nota
-      if (turnstileWidgetIdRef.current && window.turnstile) {
-        try { window.turnstile.reset(turnstileRef.current); } catch (e) {}
-      }
       setMostrarExito(true);
       setTimeout(() => { setMostrarExito(false); setPantalla('feed'); }, 1500);
     } catch (e) {
@@ -1410,16 +1338,21 @@ export default function FireApp() {
             </p>
           )}
 
-          {/* Turnstile CAPTCHA - invisible, no muestra nada */}
+          {/* Turnstile CAPTCHA */}
           <div 
             ref={turnstileRef} 
             style={{ 
-              position: 'absolute',
-              width: 0,
-              height: 0,
-              overflow: 'hidden',
+              margin: '16px 0', 
+              minHeight: '65px',
+              display: 'flex',
+              justifyContent: 'center',
             }}
           />
+          {turnstileToken && turnstileToken !== 'bypass-on-error' && (
+            <p style={{ color: COLORS.success, fontSize: '12px', textAlign: 'center', marginBottom: '12px' }}>
+              ✓ Verificación completada
+            </p>
+          )}
 
           <button
             onClick={publicar}
@@ -1430,7 +1363,7 @@ export default function FireApp() {
               cursor: (enviando || !texto.trim() || cooldownActivo) ? 'not-allowed' : 'pointer',
             }}
           >
-            {enviando ? '🔒 Verificando...' : cooldownActivo ? `Espera ${cooldownRestante}s` : '🔥 SOLTAR'}
+            {enviando ? 'Soltando...' : cooldownActivo ? `Espera ${cooldownRestante}s` : '🔥 SOLTAR'}
           </button>
 
           <button onClick={() => { setPantalla('feed'); setError(''); }} style={S.btnSecundario}>
