@@ -753,12 +753,11 @@ export default function FireApp() {
       setTexto('');
       setTurnstileToken(null);
       
-      // Incrementar contador de notas publicadas
+      // Incrementar contador local (el servidor ya lo hizo en publicar_pensamiento)
       setMisEstadisticas(prev => ({
         ...prev,
         total_notas_publicadas: prev.total_notas_publicadas + 1
       }));
-      try { supabase.rpc('incrementar_notas_publicadas', { p_device_id: deviceId }).catch(() => {}); } catch(e) {}
       
       setMostrarExito(true);
       setTimeout(() => { setMostrarExito(false); setPantalla('feed'); }, 1500);
@@ -1028,8 +1027,8 @@ export default function FireApp() {
           onClick={() => setPantalla('mapa')} 
           style={{...S.tab, ...(pantalla === 'mapa' ? S.tabActive : {})}}
         >
-          <span style={{ marginRight: '6px' }}>🗺️</span>
-          Mapa
+          <span style={{ marginRight: '6px' }}>🏆</span>
+          Mapa y Top 10
         </button>
         <button 
           onClick={() => { cargarMisNotas(); cargarEstadisticas(); setPantalla('misnotas'); }} 
@@ -1237,13 +1236,17 @@ export default function FireApp() {
                 
                 const estiloQuemado = {
                   opacity: nivelFuego >= 3 ? 0.85 : nivelFuego >= 2 ? 0.9 : 1 - (quemado * 0.15),
-                  boxShadow: nivelFuego >= 2 
-                    ? '0 0 20px rgba(255, 107, 53, 0.5), 0 0 40px rgba(255, 69, 0, 0.3)'
-                    : estaArdiendo 
-                      ? '0 4px 20px rgba(255, 107, 53, 0.3)'
-                      : '0 2px 12px rgba(0,0,0,0.3)',
-                  border: nivelFuego >= 2 ? '2px solid #FF6B35' : 'none',
-                  animation: nivelFuego >= 3 ? 'burning 1.5s ease-in-out infinite' : 'none',
+                  boxShadow: esTop
+                    ? '0 0 20px rgba(255, 215, 0, 0.5), 0 0 40px rgba(255, 215, 0, 0.3)'
+                    : nivelFuego >= 2 
+                      ? '0 0 20px rgba(255, 107, 53, 0.5), 0 0 40px rgba(255, 69, 0, 0.3)'
+                      : estaArdiendo 
+                        ? '0 4px 20px rgba(255, 107, 53, 0.3)'
+                        : '0 2px 12px rgba(0,0,0,0.3)',
+                  border: esTop 
+                    ? '2px solid #FFD700'
+                    : nivelFuego >= 2 ? '2px solid #FF6B35' : 'none',
+                  animation: nivelFuego >= 3 ? 'burning 1.5s ease-in-out infinite' : esTop ? 'glow 2s ease-in-out infinite' : 'none',
                 };
                 
                 return (
@@ -1253,18 +1256,58 @@ export default function FireApp() {
                   }}>
                     <div style={S.notaLines} />
                     
+                    {/* Efecto quemándose - borde inferior con gradiente */}
                     {nivelFuego >= 2 && (
-                      <div style={S.burningIndicator}>
-                        {nivelFuego >= 3 ? '🔥🔥🔥' : '🔥🔥'}
+                      <div style={{
+                        position: 'absolute',
+                        bottom: 0, left: 0, right: 0,
+                        height: nivelFuego >= 3 ? '40px' : '24px',
+                        background: nivelFuego >= 3 
+                          ? 'linear-gradient(to top, rgba(255,69,0,0.4), rgba(255,107,53,0.15), transparent)'
+                          : 'linear-gradient(to top, rgba(255,107,53,0.2), transparent)',
+                        borderRadius: '0 0 8px 8px',
+                        pointerEvents: 'none',
+                        zIndex: 2,
+                      }} />
+                    )}
+                    
+                    {/* Indicador de tiempo restante para notas que se queman */}
+                    {nivelFuego >= 2 && (
+                      <div style={{
+                        position: 'absolute',
+                        top: '8px', left: '8px',
+                        fontSize: '11px',
+                        backgroundColor: nivelFuego >= 3 ? '#FF4500' : '#FF6B35',
+                        color: '#fff',
+                        padding: '2px 8px',
+                        borderRadius: '8px',
+                        fontWeight: '600',
+                        zIndex: 10,
+                        display: 'flex', alignItems: 'center', gap: '4px',
+                      }}>
+                        {nivelFuego >= 3 ? '🔥' : '⏱'} {tiempoRestanteCorto(nota.expires_at)}
+                      </div>
+                    )}
+                    
+                    {/* Badge Top 1 */}
+                    {esTop && (
+                      <div style={{
+                        position: 'absolute', top: '-10px', left: '50%', transform: 'translateX(-50%)',
+                        backgroundColor: '#FFD700',
+                        color: '#000',
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        padding: '3px 12px',
+                        borderRadius: '10px',
+                        zIndex: 10,
+                        boxShadow: '0 2px 8px rgba(255, 215, 0, 0.5)',
+                        display: 'flex', alignItems: 'center', gap: '4px',
+                      }}>
+                        👑 TOP 1
                       </div>
                     )}
                     
                     {esMia && <div style={S.tuNotaBadgeFeed}>Tu nota</div>}
-                    
-                    {esTop && <div style={{
-                      position: 'absolute', top: '8px', right: esMia ? '70px' : '8px',
-                      fontSize: '20px', animation: 'pulse 1s ease infinite',
-                    }}>👑</div>}
                     
                     {estaArdiendo && !esTop && nivelFuego < 2 && <div style={S.notaHot}>🔥</div>}
                     
@@ -1317,7 +1360,7 @@ export default function FireApp() {
       {pantalla === 'mapa' && (
         <main style={S.mapaContainer}>
           <div style={S.mapaHeader}>
-            <h3 style={S.mapaTitle}>🗺️ Mapa de Actividad</h3>
+            <h3 style={S.mapaTitle}>🗺️ Mapa y Top 10</h3>
             <p style={S.mapaSubtitle}>Notas en tu zona (1km de radio)</p>
           </div>
           
@@ -1555,9 +1598,36 @@ export default function FireApp() {
                   }}>
                     <div style={S.notaLines} />
                     
+                    {/* Efecto quemándose - gradiente inferior */}
                     {nivelFuego >= 2 && (
-                      <div style={S.burningIndicator}>
-                        {nivelFuego >= 3 ? '🔥🔥🔥 EXPIRANDO' : '🔥🔥'}
+                      <div style={{
+                        position: 'absolute',
+                        bottom: 0, left: 0, right: 0,
+                        height: nivelFuego >= 3 ? '40px' : '24px',
+                        background: nivelFuego >= 3 
+                          ? 'linear-gradient(to top, rgba(255,69,0,0.4), rgba(255,107,53,0.15), transparent)'
+                          : 'linear-gradient(to top, rgba(255,107,53,0.2), transparent)',
+                        borderRadius: '0 0 8px 8px',
+                        pointerEvents: 'none',
+                        zIndex: 2,
+                      }} />
+                    )}
+                    
+                    {/* Tiempo restante para notas que se queman */}
+                    {nivelFuego >= 2 && (
+                      <div style={{
+                        position: 'absolute',
+                        top: '8px', left: '8px',
+                        fontSize: '11px',
+                        backgroundColor: nivelFuego >= 3 ? '#FF4500' : '#FF6B35',
+                        color: '#fff',
+                        padding: '2px 8px',
+                        borderRadius: '8px',
+                        fontWeight: '600',
+                        zIndex: 10,
+                        display: 'flex', alignItems: 'center', gap: '4px',
+                      }}>
+                        {nivelFuego >= 3 ? '🔥' : '⏱'} {tiempoRestanteCorto(nota.expires_at)}
                       </div>
                     )}
                     
