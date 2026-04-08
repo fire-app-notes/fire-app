@@ -14,7 +14,7 @@ const supabase = createClient(
 // CONSTANTES DE LA APP
 // ============================================================
 const RADIO_KM = 1;
-const MAX_NOTAS_GRATIS = 3;
+const MAX_NOTAS_GRATIS = 5;
 const MAX_VIDEOS_DIA = 3;
 const COOLDOWN_SECONDS = 30;
 
@@ -249,7 +249,7 @@ export default function FireApp() {
     total_fires_recibidos: 0,
     total_notas_publicadas: 0,
     mejor_nota_fires: 0,
-    logros: []
+    logros: {}
   });
   
   // Turnstile CAPTCHA
@@ -430,11 +430,20 @@ export default function FireApp() {
         .single();
       
       if (data && !error) {
+        // Logros puede ser un objeto {chispa_10: "fecha", ...} o un array viejo ["star_2026_04"]
+        let logrosData = data.logros || {};
+        if (Array.isArray(logrosData)) {
+          // Convertir formato viejo de array a objeto
+          const obj = {};
+          logrosData.forEach(l => { obj[l] = ''; });
+          logrosData = obj;
+        }
+        
         setMisEstadisticas({
           total_fires_recibidos: data.total_fires_recibidos || 0,
           total_notas_publicadas: data.total_notas_publicadas || 0,
           mejor_nota_fires: data.mejor_nota_fires || 0,
-          logros: data.logros || []
+          logros: logrosData
         });
       }
     } catch (e) {
@@ -971,33 +980,80 @@ export default function FireApp() {
               </div>
             </div>
             
-            {misEstadisticas.logros && misEstadisticas.logros.length > 0 ? (
-              <div style={S.estrellasSection}>
-                <p style={S.estrellasTitle}>🌟 Tus Estrellas Doradas</p>
-                <div style={S.estrellasGrid}>
-                  {misEstadisticas.logros.map((logro, idx) => {
-                    const partes = logro.split('_');
-                    const año = partes[1];
-                    const mes = partes[2];
-                    const meses = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-                    const nombreMes = meses[parseInt(mes)] || mes;
-                    
-                    return (
-                      <div key={idx} style={S.estrellaItem}>
-                        <span style={S.estrellaEmoji}>🌟</span>
-                        <span style={S.estrellaFecha}>{nombreMes} {año}</span>
+            {/* Sistema de Medallas */}
+            {(() => {
+              const logros = misEstadisticas.logros || {};
+              const medallas = [
+                { key: 'chispa_10', emoji: '🔥', nombre: 'Chispa', desc: '10 fuegos en una nota', color: '#FF6B35' },
+                { key: 'fogata_50', emoji: '🔥🔥', nombre: 'Fogata', desc: '50 fuegos en una nota', color: '#FF4500' },
+                { key: 'incendio_100', emoji: '🔥🔥🔥', nombre: 'Incendio', desc: '100 fuegos en una nota', color: '#FF0000' },
+                { key: 'volcan_1000', emoji: '🌋', nombre: 'Volcán', desc: '1,000 fuegos en una nota', color: '#FF6B35' },
+                { key: 'estrella_10000', emoji: '🌟', nombre: 'Estrella Dorada', desc: '10,000 fuegos en una nota', color: '#FFD700' },
+              ];
+              const medallasObtenidas = medallas.filter(m => logros[m.key]);
+              const medallasPendientes = medallas.filter(m => !logros[m.key]);
+              
+              return (
+                <div style={{ textAlign: 'center' }}>
+                  <p style={{ fontSize: '14px', fontWeight: '600', color: COLORS.gold, marginBottom: '16px' }}>
+                    🏅 Tus Medallas
+                  </p>
+                  
+                  {/* Medallas obtenidas */}
+                  {medallasObtenidas.length > 0 ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '10px', marginBottom: '16px' }}>
+                      {medallasObtenidas.map((m) => {
+                        const fecha = logros[m.key];
+                        const fechaCorta = fecha ? new Date(fecha).toLocaleDateString('es-MX', { month: 'short', year: 'numeric' }) : '';
+                        return (
+                          <div key={m.key} style={{
+                            display: 'flex', flexDirection: 'column', alignItems: 'center',
+                            padding: '12px 16px',
+                            background: `linear-gradient(135deg, ${COLORS.bgCard}, #2a2a3a)`,
+                            borderRadius: '12px',
+                            border: `2px solid ${m.color}`,
+                            boxShadow: `0 0 15px ${m.color}40`,
+                            minWidth: '80px',
+                          }}>
+                            <span style={{ fontSize: '28px', filter: `drop-shadow(0 0 6px ${m.color})` }}>{m.emoji}</span>
+                            <span style={{ fontSize: '11px', fontWeight: '700', color: m.color, marginTop: '4px' }}>{m.nombre}</span>
+                            {fechaCorta && <span style={{ fontSize: '9px', color: COLORS.gray, marginTop: '2px' }}>{fechaCorta}</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div style={{ padding: '12px', marginBottom: '12px' }}>
+                      <span style={{ fontSize: '32px', opacity: 0.3 }}>🏅</span>
+                      <p style={{ fontSize: '12px', color: COLORS.gray, marginTop: '8px' }}>
+                        Aún no tienes medallas. ¡Consigue 10 🔥 en una nota!
+                      </p>
+                    </div>
+                  )}
+                  
+                  {/* Siguiente medalla por conseguir */}
+                  {medallasPendientes.length > 0 && (
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                      padding: '10px 16px',
+                      backgroundColor: `${COLORS.bgCard}`,
+                      borderRadius: '10px',
+                      border: `1px dashed ${COLORS.gray}40`,
+                    }}>
+                      <span style={{ fontSize: '18px', opacity: 0.4 }}>{medallasPendientes[0].emoji}</span>
+                      <div style={{ textAlign: 'left' }}>
+                        <span style={{ fontSize: '11px', fontWeight: '600', color: COLORS.grayLight }}>
+                          Siguiente: {medallasPendientes[0].nombre}
+                        </span>
+                        <p style={{ fontSize: '10px', color: COLORS.gray, margin: 0 }}>
+                          {medallasPendientes[0].desc}
+                        </p>
                       </div>
-                    );
-                  })}
+                    </div>
+                  )}
                 </div>
-                <p style={S.estrellaDesc}>10,000+ fuegos en una nota</p>
-              </div>
-            ) : (
-              <div style={S.sinEstrellas}>
-                <span style={{ fontSize: '32px', opacity: 0.3 }}>🌟</span>
-                <p style={S.sinEstrellasText}>Consigue 10,000 🔥 en una nota para ganar tu primera estrella dorada</p>
-              </div>
-            )}
+              );
+            })()}
           </div>
         </>
       )}
@@ -1123,16 +1179,20 @@ export default function FireApp() {
                   glow = '0 0 20px #FFD700, 0 0 40px #FFD700, 0 0 60px #FFA500';
                   animation = 'pulse 0.6s ease infinite'; color = '#FFD700';
                 } else if (nota.fires >= 1000) {
-                  content = '💭🔥'; size = 22;
-                  glow = '0 0 15px #FFD700, 0 0 30px #FFD700';
-                  animation = 'pulse 0.8s ease infinite'; color = '#FFD700';
+                  content = '🌋'; size = 24;
+                  glow = '0 0 15px #FF6B35, 0 0 30px #FF6B35';
+                  animation = 'pulse 0.8s ease infinite'; color = '#FF6B35';
                 } else if (nota.fires >= 100) {
-                  content = '🔥💭🔥'; size = 18;
-                  glow = '0 0 12px #FF6B35, 0 0 24px #FF6B35';
-                  animation = 'pulse 1s ease infinite'; color = '#FF6B35';
+                  content = '🔥🔥🔥'; size = 16;
+                  glow = '0 0 12px #FF0000, 0 0 24px #FF0000';
+                  animation = 'pulse 1s ease infinite'; color = '#FF0000';
+                } else if (nota.fires >= 50) {
+                  content = '🔥🔥'; size = 16;
+                  glow = '0 0 8px #FF4500';
+                  animation = 'pulse 1.2s ease infinite'; color = '#FF4500';
                 } else if (nota.fires >= 10) {
-                  content = '💭✨'; size = 16;
-                  glow = '0 0 8px #FF6B35';
+                  content = '🔥'; size = 16;
+                  glow = '0 0 6px #FF6B35';
                   animation = 'none'; color = '#FF6B35';
                 } else {
                   content = '💭'; size = 14;
@@ -1148,7 +1208,7 @@ export default function FireApp() {
                       top: `${y}%`,
                       transform: 'translate(-50%, -50%)',
                       fontSize: `${size}px`,
-                      filter: nota.fires >= 1000 ? 'drop-shadow(0 0 8px gold)' : 'none',
+                      filter: nota.fires >= 1000 ? 'drop-shadow(0 0 8px gold)' : nota.fires >= 100 ? 'drop-shadow(0 0 4px red)' : 'none',
                       animation: animation,
                       cursor: 'pointer',
                       zIndex: Math.min(nota.fires, 100) + 1,
@@ -1166,10 +1226,11 @@ export default function FireApp() {
             </div>
             
             <div style={S.mapaLeyenda}>
-              <span>💭</span>
-              <span>💭✨ 10+</span>
-              <span>🔥💭🔥 100+</span>
-              <span>💭🔥 1k+</span>
+              <span>💭 &lt;10</span>
+              <span>🔥 10+</span>
+              <span>🔥🔥 50+</span>
+              <span>🔥🔥🔥 100+</span>
+              <span>🌋 1k+</span>
               <span>🌟 10k+</span>
             </div>
           </div>
