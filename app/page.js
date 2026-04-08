@@ -752,6 +752,14 @@ export default function FireApp() {
       setMisNotas((prev) => [nuevaNota, ...prev]);
       setTexto('');
       setTurnstileToken(null);
+      
+      // Incrementar contador de notas publicadas
+      setMisEstadisticas(prev => ({
+        ...prev,
+        total_notas_publicadas: prev.total_notas_publicadas + 1
+      }));
+      supabase.rpc('incrementar_notas_publicadas', { p_device_id: deviceId }).catch(() => {});
+      
       setMostrarExito(true);
       setTimeout(() => { setMostrarExito(false); setPantalla('feed'); }, 1500);
     } catch (e) {
@@ -1024,7 +1032,7 @@ export default function FireApp() {
           Mapa
         </button>
         <button 
-          onClick={() => { cargarMisNotas(); setPantalla('misnotas'); }} 
+          onClick={() => { cargarMisNotas(); cargarEstadisticas(); setPantalla('misnotas'); }} 
           style={{...S.tab, ...(pantalla === 'misnotas' ? S.tabActive : {})}}
         >
           <span style={{ marginRight: '6px' }}>📝</span>
@@ -1211,6 +1219,60 @@ export default function FireApp() {
             </div>
           ) : (
             <div style={S.notasGrid}>
+              {/* TOP 5 RANKING */}
+              {notas.some(n => n.fires >= 1) && (
+                <div style={{
+                  backgroundColor: COLORS.bgSecondary,
+                  borderRadius: '12px',
+                  padding: '14px',
+                  border: `1px solid ${COLORS.bgCard}`,
+                  marginBottom: '8px',
+                }}>
+                  <p style={{
+                    fontSize: '14px', fontWeight: '700', color: COLORS.gold,
+                    textAlign: 'center', marginBottom: '12px', margin: 0,
+                    fontFamily: "'Space Grotesk', sans-serif",
+                  }}>
+                    🏆 Top de tu zona
+                  </p>
+                  {[...notas]
+                    .filter(n => n.fires >= 1)
+                    .sort((a, b) => b.fires - a.fires)
+                    .slice(0, 5)
+                    .map((nota, idx) => (
+                      <div key={nota.id} style={{
+                        display: 'flex', alignItems: 'center', gap: '10px',
+                        padding: '8px 0',
+                        borderBottom: idx < 4 ? `1px solid ${COLORS.bgCard}` : 'none',
+                      }}>
+                        <span style={{
+                          fontSize: idx === 0 ? '20px' : '14px',
+                          fontWeight: '700',
+                          color: idx === 0 ? COLORS.gold : idx === 1 ? '#C0C0C0' : idx === 2 ? '#CD7F32' : COLORS.gray,
+                          minWidth: '24px',
+                          textAlign: 'center',
+                        }}>
+                          {idx === 0 ? '👑' : idx === 1 ? '2' : idx === 2 ? '3' : idx === 3 ? '4' : '5'}
+                        </span>
+                        <p style={{
+                          flex: 1, margin: 0, fontSize: '13px', color: COLORS.grayLight,
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
+                          {nota.texto}
+                        </p>
+                        <span style={{
+                          fontSize: '12px', fontWeight: '600',
+                          color: nota.fires >= 10 ? COLORS.orange : COLORS.gray,
+                          display: 'flex', alignItems: 'center', gap: '3px',
+                        }}>
+                          🔥 {nota.fires}
+                        </span>
+                      </div>
+                    ))
+                  }
+                </div>
+              )}
+              
               {notas.map((nota) => {
                 const quemado = calcularQuemado(nota.created_at, nota.expires_at);
                 const nivelFuego = getNivelFuego(quemado);
