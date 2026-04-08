@@ -1056,30 +1056,20 @@ export default function FireApp() {
       {/* ===== STATS DE MIS NOTAS + HISTORIAL ===== */}
       {pantalla === 'misnotas' && !cargandoMisNotas && (
         <>
-          {/* HOY - Notas activas y fuegos del día */}
+          {/* NOTAS ACTIVAS */}
           <div style={S.misNotasStats}>
             <div style={S.statItem}>
               <span style={S.statNumber}>{misNotas.length}</span>
               <span style={S.statLabel}>notas activas</span>
             </div>
-            <div style={S.statDivider} />
-            <div style={S.statItem}>
-              <span style={S.statNumber}>{totalFires}</span>
-              <span style={S.statLabel}>🔥 del día</span>
-            </div>
           </div>
           
-          {/* HISTORIAL - Totales permanentes */}
+          {/* HISTORIAL */}
           <div style={S.historialBox}>
-            <div style={S.historialHeader}>
-              <span style={{ fontSize: '18px' }}>📊</span>
-              <span style={S.historialTitle}>Tu Historial</span>
-            </div>
-            
             <div style={S.historialStats}>
               <div style={S.historialStatItem}>
                 <span style={S.historialStatNumber}>{misEstadisticas.total_notas_publicadas}</span>
-                <span style={S.historialStatLabel}>notas soltadas</span>
+                <span style={S.historialStatLabel}>notas totales</span>
               </div>
               <div style={S.historialStatItem}>
                 <span style={{...S.historialStatNumber, color: COLORS.gold}}>{misEstadisticas.total_fires_recibidos.toLocaleString()}</span>
@@ -1110,7 +1100,6 @@ export default function FireApp() {
                     🏅 Tus Medallas
                   </p>
                   
-                  {/* Medallas obtenidas */}
                   {medallasObtenidas.length > 0 ? (
                     <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '10px', marginBottom: '16px' }}>
                       {medallasObtenidas.map((m) => {
@@ -1142,7 +1131,6 @@ export default function FireApp() {
                     </div>
                   )}
                   
-                  {/* Siguiente medalla por conseguir */}
                   {medallasPendientes.length > 0 && (
                     <div style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
