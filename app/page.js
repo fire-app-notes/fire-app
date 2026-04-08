@@ -342,6 +342,34 @@ export default function FireApp() {
       localStorage.setItem('fire_visited', 'true');
     }
 
+    // Detectar retorno de pago exitoso de Stripe
+    const urlParams = new URLSearchParams(window.location.search);
+    const pagoStatus = urlParams.get('pago');
+    const pagoTipo = urlParams.get('tipo');
+    const pagoDeviceId = urlParams.get('device_id');
+    
+    if (pagoStatus === 'exito' && pagoTipo && pagoDeviceId) {
+      // Confirmar pago en el servidor
+      fetch('https://xjzoabsuzbqxkriamqed.supabase.co/functions/v1/confirm-payment', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhqem9hYnN1emJxeGtyaWFtcWVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyNzYyNDcsImV4cCI6MjA5MDg1MjI0N30.gS2lG4W-f_4Vtsz7cYZK9PAX6pI8fdD0br7geqaae6E',
+        },
+        body: JSON.stringify({ tipo: pagoTipo, device_id: pagoDeviceId }),
+      }).then(() => {
+        if (pagoTipo === 'extra10') setExtrasComprados(prev => prev + 10);
+        else if (pagoTipo === 'extra3') setExtrasComprados(prev => prev + 3);
+        setMostrarMedalla({ emoji: '✅', nombre: '¡Pago exitoso! Notas agregadas' });
+        setTimeout(() => setMostrarMedalla(null), 3000);
+      }).catch(() => {});
+      
+      // Limpiar URL
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (pagoStatus === 'cancelado') {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+
     // Cargar Firebase para Push Notifications
     const loadFirebase = async () => {
       try {
@@ -884,19 +912,25 @@ export default function FireApp() {
 
   const comprar = async (tipo) => {
     try {
-      const { error: err } = await supabase.from('compras').insert({
-        device_id: deviceId, tipo: tipo,
-        fecha: new Date().toISOString().split('T')[0],
+      setError('');
+      const response = await fetch('https://xjzoabsuzbqxkriamqed.supabase.co/functions/v1/create-checkout', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhqem9hYnN1emJxeGtyaWFtcWVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyNzYyNDcsImV4cCI6MjA5MDg1MjI0N30.gS2lG4W-f_4Vtsz7cYZK9PAX6pI8fdD0br7geqaae6E',
+        },
+        body: JSON.stringify({ tipo, device_id: deviceId }),
       });
-      if (!err) {
-        if (tipo === 'extra10') {
-          setExtrasComprados((prev) => prev + 10);
-        } else if (tipo === 'extra3') {
-          setExtrasComprados((prev) => prev + 3);
-        }
-        setMostrarModal(false);
+      
+      const data = await response.json();
+      
+      if (data.ok && data.url) {
+        // Redirigir a Stripe Checkout
+        window.location.href = data.url;
+      } else {
+        setError(data.error || 'Error al procesar. Intenta de nuevo.');
       }
-    } catch (e) { setError('Error al procesar compra.'); }
+    } catch (e) { setError('Error de conexión. Intenta de nuevo.'); }
   };
 
   // ============================================================
@@ -1797,7 +1831,7 @@ export default function FireApp() {
             <div style={S.welcomeFeatures}>
               <div style={S.welcomeFeature}>
                 <span>📍</span>
-                <span>Solo ves notas cerca de ti</span>
+                <span>Las notas flotan donde las sueltas</span>
               </div>
               <div style={S.welcomeFeature}>
                 <span>⏱</span>
@@ -1805,13 +1839,27 @@ export default function FireApp() {
               </div>
               <div style={S.welcomeFeature}>
                 <span>👤</span>
-                <span>100% anónimo</span>
+                <span>Cero registro, cero datos, 100% anónimo</span>
               </div>
               <div style={S.welcomeFeature}>
                 <span>🔥</span>
-                <span>Da fuego a lo que te gusta</span>
+                <span>Sin likes, sin corazones, solo fuegos</span>
               </div>
             </div>
+            <p style={{
+              fontSize: '13px',
+              color: COLORS.grayLight,
+              textAlign: 'center',
+              fontStyle: 'italic',
+              lineHeight: '1.6',
+              marginBottom: '20px',
+              padding: '12px',
+              borderLeft: `3px solid ${COLORS.gold}`,
+              backgroundColor: `${COLORS.bgCard}`,
+              borderRadius: '0 8px 8px 0',
+            }}>
+              Cuando tu nota recibe fuegos no es porque les gustó tu foto o tu nombre, es porque lo que escribiste conectó de verdad. <strong style={{ color: COLORS.gold }}>Sin cara, sin filtro, solo tus palabras.</strong>
+            </p>
             <button onClick={() => setMostrarBienvenida(false)} style={S.btnPrimario}>
               ¡Entendido!
             </button>
