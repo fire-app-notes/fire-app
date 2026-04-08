@@ -1237,7 +1237,7 @@ export default function FireApp() {
                 const estiloQuemado = {
                   opacity: nivelFuego >= 3 ? 0.85 : nivelFuego >= 2 ? 0.9 : 1 - (quemado * 0.15),
                   boxShadow: esTop
-                    ? '0 0 20px rgba(255, 215, 0, 0.5), 0 0 40px rgba(255, 215, 0, 0.3)'
+                    ? '0 0 20px rgba(255, 215, 0, 0.4), 0 0 40px rgba(255, 215, 0, 0.2), 0 4px 24px rgba(0,0,0,0.5)'
                     : nivelFuego >= 2 
                       ? '0 0 20px rgba(255, 107, 53, 0.5), 0 0 40px rgba(255, 69, 0, 0.3)'
                       : estaArdiendo 
@@ -1247,14 +1247,21 @@ export default function FireApp() {
                     ? '2px solid #FFD700'
                     : nivelFuego >= 2 ? '2px solid #FF6B35' : 'none',
                   animation: nivelFuego >= 3 ? 'burning 1.5s ease-in-out infinite' : esTop ? 'glow 2s ease-in-out infinite' : 'none',
+                  // TOP 1: fondo oscuro con estilo premium
+                  ...(esTop ? {
+                    backgroundColor: '#1A1A2E',
+                    background: 'linear-gradient(135deg, #1A1A2E 0%, #16213E 50%, #1A1A2E 100%)',
+                  } : {}),
                 };
                 
                 return (
                   <div key={nota.id} style={{
                     ...S.nota,
                     ...estiloQuemado,
+                    marginTop: esTop ? '14px' : '0',
                   }}>
-                    <div style={S.notaLines} />
+                    {/* Líneas de cuaderno solo en notas normales */}
+                    {!esTop && <div style={S.notaLines} />}
                     
                     {/* Efecto quemándose - borde inferior con gradiente */}
                     {nivelFuego >= 2 && (
@@ -1312,36 +1319,45 @@ export default function FireApp() {
                     
                     {estaArdiendo && !esTop && nivelFuego < 2 && <div style={S.notaHot}>🔥</div>}
                     
-                    <p style={S.notaTexto}>{nota.texto}</p>
+                    <p style={{
+                      ...S.notaTexto,
+                      ...(esTop ? { color: '#FFFFFF', fontSize: '16px', fontWeight: '500' } : {}),
+                    }}>{nota.texto}</p>
                     
                     <div style={S.notaFooter}>
                       <div style={S.notaMeta}>
                         <span style={{
                           ...S.notaTiempo,
-                          color: nivelFuego >= 2 ? '#FF6B35' : '#8B7355',
-                          fontWeight: nivelFuego >= 2 ? '600' : '500',
+                          color: esTop ? '#FFD700' : nivelFuego >= 2 ? '#FF6B35' : '#8B7355',
+                          fontWeight: nivelFuego >= 2 || esTop ? '600' : '500',
                         }}>
                           {timeAgo(nota.created_at)}
                           {nivelFuego >= 2 && ` · ${tiempoRestanteCorto(nota.expires_at)} 💨`}
                         </span>
-                        <span style={S.notaDistancia}>{nota.distanciaMetros}m</span>
+                        <span style={{
+                          ...S.notaDistancia,
+                          ...(esTop ? { color: '#A0AEC0', backgroundColor: 'rgba(255,255,255,0.1)' } : {}),
+                        }}>{nota.distanciaMetros}m</span>
                       </div>
                       <div style={S.notaActions}>
-                        <button onClick={() => setMostrarReporte(nota.id)} style={S.reportBtn}>
+                        <button onClick={() => setMostrarReporte(nota.id)} style={{
+                          ...S.reportBtn,
+                          ...(esTop ? { color: '#A0AEC0' } : {}),
+                        }}>
                           ⚑
                         </button>
                         <button 
                           onClick={() => hacerFire(nota.id)} 
                           style={{
                             ...S.fireBtn,
-                            backgroundColor: tieneReaccion ? 'rgba(255,107,53,0.2)' : 'transparent',
-                            borderColor: tieneReaccion ? COLORS.orange : 'rgba(0,0,0,0.1)',
+                            backgroundColor: tieneReaccion ? 'rgba(255,107,53,0.3)' : esTop ? 'rgba(255,215,0,0.15)' : 'transparent',
+                            borderColor: tieneReaccion ? COLORS.orange : esTop ? '#FFD700' : 'rgba(0,0,0,0.1)',
                           }}
                         >
                           <span style={{ fontSize: '16px' }}>🔥</span>
                           <span style={{ 
                             fontWeight: '600',
-                            color: tieneReaccion ? COLORS.orange : COLORS.noteText,
+                            color: tieneReaccion ? COLORS.orange : esTop ? '#FFD700' : COLORS.noteText,
                           }}>
                             {nota.fires}
                           </span>
