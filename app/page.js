@@ -1247,10 +1247,10 @@ export default function FireApp() {
                     ? '2px solid #FFD700'
                     : nivelFuego >= 2 ? '2px solid #FF6B35' : 'none',
                   animation: nivelFuego >= 3 ? 'burning 1.5s ease-in-out infinite' : esTop ? 'glow 2s ease-in-out infinite' : 'none',
-                  // TOP 1: fondo oscuro con estilo premium
+                  // TOP 1: fondo morado oscuro premium
                   ...(esTop ? {
-                    backgroundColor: '#1A1A2E',
-                    background: 'linear-gradient(135deg, #1A1A2E 0%, #16213E 50%, #1A1A2E 100%)',
+                    backgroundColor: '#2D1B4E',
+                    background: 'linear-gradient(135deg, #2D1B4E 0%, #1A1A2E 50%, #2D1B4E 100%)',
                   } : {}),
                 };
                 
@@ -1258,7 +1258,6 @@ export default function FireApp() {
                   <div key={nota.id} style={{
                     ...S.nota,
                     ...estiloQuemado,
-                    marginTop: esTop ? '14px' : '0',
                   }}>
                     {/* Líneas de cuaderno solo en notas normales */}
                     {!esTop && <div style={S.notaLines} />}
@@ -1296,22 +1295,21 @@ export default function FireApp() {
                       </div>
                     )}
                     
-                    {/* Badge Top 1 */}
+                    {/* Badge Top 1 - DENTRO de la nota */}
                     {esTop && (
                       <div style={{
-                        position: 'absolute', top: '-14px', left: '50%', transform: 'translateX(-50%)',
-                        backgroundColor: '#FFD700',
-                        color: '#000',
-                        fontSize: '13px',
-                        fontWeight: '700',
-                        padding: '4px 16px',
-                        borderRadius: '12px',
-                        zIndex: 10,
-                        boxShadow: '0 2px 10px rgba(255, 215, 0, 0.6)',
-                        display: 'flex', alignItems: 'center', gap: '6px',
-                        whiteSpace: 'nowrap',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                        marginBottom: '10px',
+                        position: 'relative', zIndex: 5,
                       }}>
-                        👑 TOP 1
+                        <span style={{ fontSize: '20px' }}>👑</span>
+                        <span style={{
+                          fontSize: '13px', fontWeight: '700', color: '#FFD700',
+                          letterSpacing: '2px',
+                        }}>
+                          TOP 1
+                        </span>
+                        <span style={{ fontSize: '20px' }}>👑</span>
                       </div>
                     )}
                     
