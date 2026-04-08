@@ -1464,22 +1464,88 @@ export default function FireApp() {
               <>
                 <span style={{ fontSize: '32px', marginBottom: '8px' }}>🌡️</span>
                 <p style={S.mapaZonaText}>Zona tibia</p>
-                <p style={S.mapaZonaSubtext}>Hay algo de actividad por aquí</p>
+                <p style={S.mapaZonaSubtext}>{notas.length} {notas.length === 1 ? 'nota' : 'notas'} cerca de ti</p>
               </>
             ) : notas.length < 15 ? (
               <>
                 <span style={{ fontSize: '32px', marginBottom: '8px' }}>🔥</span>
                 <p style={S.mapaZonaText}>¡Zona activa!</p>
-                <p style={S.mapaZonaSubtext}>Mucha gente soltando pensamientos</p>
+                <p style={S.mapaZonaSubtext}>{notas.length} notas y {notas.reduce((s, n) => s + n.fires, 0)} fuegos</p>
               </>
             ) : (
               <>
                 <span style={{ fontSize: '32px', marginBottom: '8px' }}>🌋</span>
                 <p style={{...S.mapaZonaText, color: COLORS.orange}}>¡ZONA EN LLAMAS!</p>
-                <p style={S.mapaZonaSubtext}>Esta zona está explotando</p>
+                <p style={S.mapaZonaSubtext}>{notas.length} notas y {notas.reduce((s, n) => s + n.fires, 0)} fuegos</p>
               </>
             )}
           </div>
+          
+          {/* TOP 5 EN EL MAPA */}
+          {notas.some(n => n.fires >= 1) && (
+            <div style={{
+              backgroundColor: COLORS.bgSecondary,
+              borderRadius: '16px',
+              padding: '16px',
+              border: `1px solid ${COLORS.bgCard}`,
+            }}>
+              <p style={{
+                fontSize: '16px', fontWeight: '700', color: COLORS.gold,
+                textAlign: 'center', marginBottom: '14px', margin: 0,
+                fontFamily: "'Space Grotesk', sans-serif",
+              }}>
+                🏆 Top de tu zona
+              </p>
+              {[...notas]
+                .filter(n => n.fires >= 1)
+                .sort((a, b) => b.fires - a.fires)
+                .slice(0, 5)
+                .map((nota, idx) => {
+                  const medalla = nota.fires >= 10000 ? '🌟' : nota.fires >= 1000 ? '🌋' : nota.fires >= 100 ? '🔥🔥🔥' : nota.fires >= 50 ? '🔥🔥' : nota.fires >= 10 ? '🔥' : '';
+                  return (
+                    <div key={nota.id} style={{
+                      display: 'flex', alignItems: 'center', gap: '10px',
+                      padding: '10px 0',
+                      borderBottom: idx < 4 ? `1px solid ${COLORS.bgCard}` : 'none',
+                    }}>
+                      <span style={{
+                        fontSize: idx === 0 ? '22px' : '16px',
+                        fontWeight: '700',
+                        color: idx === 0 ? COLORS.gold : idx === 1 ? '#C0C0C0' : idx === 2 ? '#CD7F32' : COLORS.gray,
+                        minWidth: '28px',
+                        textAlign: 'center',
+                      }}>
+                        {idx === 0 ? '👑' : `${idx + 1}`}
+                      </span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{
+                          margin: 0, fontSize: '13px', color: COLORS.white,
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
+                          {nota.texto}
+                        </p>
+                        <span style={{ fontSize: '10px', color: COLORS.gray }}>{nota.distanciaMetros}m · {timeAgo(nota.created_at)}</span>
+                      </div>
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: '4px',
+                        padding: '4px 10px',
+                        backgroundColor: nota.fires >= 10 ? `${COLORS.orange}20` : 'transparent',
+                        borderRadius: '12px',
+                      }}>
+                        <span style={{ fontSize: '14px' }}>{medalla || '🔥'}</span>
+                        <span style={{
+                          fontSize: '14px', fontWeight: '700',
+                          color: nota.fires >= 10 ? COLORS.orange : COLORS.grayLight,
+                        }}>
+                          {nota.fires}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
+              }
+            </div>
+          )}
         </main>
       )}
 
