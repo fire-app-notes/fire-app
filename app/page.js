@@ -758,7 +758,7 @@ export default function FireApp() {
         ...prev,
         total_notas_publicadas: prev.total_notas_publicadas + 1
       }));
-      supabase.rpc('incrementar_notas_publicadas', { p_device_id: deviceId }).catch(() => {});
+      try { supabase.rpc('incrementar_notas_publicadas', { p_device_id: deviceId }).catch(() => {}); } catch(e) {}
       
       setMostrarExito(true);
       setTimeout(() => { setMostrarExito(false); setPantalla('feed'); }, 1500);
@@ -1219,61 +1219,16 @@ export default function FireApp() {
             </div>
           ) : (
             <div style={S.notasGrid}>
-              {/* TOP 5 RANKING */}
-              {notas.some(n => n.fires >= 1) && (
-                <div style={{
-                  backgroundColor: COLORS.bgSecondary,
-                  borderRadius: '12px',
-                  padding: '14px',
-                  border: `1px solid ${COLORS.bgCard}`,
-                  marginBottom: '8px',
-                }}>
-                  <p style={{
-                    fontSize: '14px', fontWeight: '700', color: COLORS.gold,
-                    textAlign: 'center', marginBottom: '12px', margin: 0,
-                    fontFamily: "'Space Grotesk', sans-serif",
-                  }}>
-                    🏆 Top de tu zona
-                  </p>
-                  {[...notas]
-                    .filter(n => n.fires >= 1)
-                    .sort((a, b) => b.fires - a.fires)
-                    .slice(0, 5)
-                    .map((nota, idx) => (
-                      <div key={nota.id} style={{
-                        display: 'flex', alignItems: 'center', gap: '10px',
-                        padding: '8px 0',
-                        borderBottom: idx < 4 ? `1px solid ${COLORS.bgCard}` : 'none',
-                      }}>
-                        <span style={{
-                          fontSize: idx === 0 ? '20px' : '14px',
-                          fontWeight: '700',
-                          color: idx === 0 ? COLORS.gold : idx === 1 ? '#C0C0C0' : idx === 2 ? '#CD7F32' : COLORS.gray,
-                          minWidth: '24px',
-                          textAlign: 'center',
-                        }}>
-                          {idx === 0 ? '👑' : idx === 1 ? '2' : idx === 2 ? '3' : idx === 3 ? '4' : '5'}
-                        </span>
-                        <p style={{
-                          flex: 1, margin: 0, fontSize: '13px', color: COLORS.grayLight,
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        }}>
-                          {nota.texto}
-                        </p>
-                        <span style={{
-                          fontSize: '12px', fontWeight: '600',
-                          color: nota.fires >= 10 ? COLORS.orange : COLORS.gray,
-                          display: 'flex', alignItems: 'center', gap: '3px',
-                        }}>
-                          🔥 {nota.fires}
-                        </span>
-                      </div>
-                    ))
-                  }
-                </div>
-              )}
-              
-              {notas.map((nota) => {
+              {(() => {
+                // Nota con más fuegos va primero con corona
+                const topNota = notas.filter(n => n.fires > 0).sort((a, b) => b.fires - a.fires)[0];
+                const resto = topNota 
+                  ? notas.filter(n => n.id !== topNota.id) // Las demás en orden original (más nuevas primero)
+                  : notas;
+                const ordenadas = topNota ? [topNota, ...resto] : resto;
+                
+                return ordenadas.map((nota) => {
+                const esTop = topNota && nota.id === topNota.id;
                 const quemado = calcularQuemado(nota.created_at, nota.expires_at);
                 const nivelFuego = getNivelFuego(quemado);
                 const estaArdiendo = nota.fires >= 10;
@@ -1306,7 +1261,12 @@ export default function FireApp() {
                     
                     {esMia && <div style={S.tuNotaBadgeFeed}>Tu nota</div>}
                     
-                    {estaArdiendo && nivelFuego < 2 && <div style={S.notaHot}>🔥</div>}
+                    {esTop && <div style={{
+                      position: 'absolute', top: '8px', right: esMia ? '70px' : '8px',
+                      fontSize: '20px', animation: 'pulse 1s ease infinite',
+                    }}>👑</div>}
+                    
+                    {estaArdiendo && !esTop && nivelFuego < 2 && <div style={S.notaHot}>🔥</div>}
                     
                     <p style={S.notaTexto}>{nota.texto}</p>
                     
@@ -1346,7 +1306,8 @@ export default function FireApp() {
                     </div>
                   </div>
                 );
-              })}
+                });
+              })()}
             </div>
           )}
         </main>
@@ -1494,19 +1455,19 @@ export default function FireApp() {
                 textAlign: 'center', marginBottom: '14px', margin: 0,
                 fontFamily: "'Space Grotesk', sans-serif",
               }}>
-                🏆 Top de tu zona
+                🏆 Top 10
               </p>
               {[...notas]
                 .filter(n => n.fires >= 1)
                 .sort((a, b) => b.fires - a.fires)
-                .slice(0, 5)
+                .slice(0, 10)
                 .map((nota, idx) => {
                   const medalla = nota.fires >= 10000 ? '🌟' : nota.fires >= 1000 ? '🌋' : nota.fires >= 100 ? '🔥🔥🔥' : nota.fires >= 50 ? '🔥🔥' : nota.fires >= 10 ? '🔥' : '';
                   return (
                     <div key={nota.id} style={{
                       display: 'flex', alignItems: 'center', gap: '10px',
                       padding: '10px 0',
-                      borderBottom: idx < 4 ? `1px solid ${COLORS.bgCard}` : 'none',
+                      borderBottom: idx < 9 ? `1px solid ${COLORS.bgCard}` : 'none',
                     }}>
                       <span style={{
                         fontSize: idx === 0 ? '22px' : '16px',
