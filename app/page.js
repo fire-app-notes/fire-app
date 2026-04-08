@@ -349,20 +349,40 @@ export default function FireApp() {
     const pagoDeviceId = urlParams.get('device_id');
     
     if (pagoStatus === 'exito' && pagoTipo && pagoDeviceId) {
-      // Confirmar pago en el servidor
-      fetch('https://xjzoabsuzbqxkriamqed.supabase.co/functions/v1/confirm-payment', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhqem9hYnN1emJxeGtyaWFtcWVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyNzYyNDcsImV4cCI6MjA5MDg1MjI0N30.gS2lG4W-f_4Vtsz7cYZK9PAX6pI8fdD0br7geqaae6E',
-        },
-        body: JSON.stringify({ tipo: pagoTipo, device_id: pagoDeviceId }),
-      }).then(() => {
-        if (pagoTipo === 'extra10') setExtrasComprados(prev => prev + 10);
-        else if (pagoTipo === 'extra3') setExtrasComprados(prev => prev + 3);
-        setMostrarMedalla({ emoji: '✅', nombre: '¡Pago exitoso! Notas agregadas' });
-        setTimeout(() => setMostrarMedalla(null), 3000);
-      }).catch(() => {});
+      // Confirmar pago en el servidor y esperar a que termine
+      const confirmarPago = async () => {
+        try {
+          await fetch('https://xjzoabsuzbqxkriamqed.supabase.co/functions/v1/confirm-payment', {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhqem9hYnN1emJxeGtyaWFtcWVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyNzYyNDcsImV4cCI6MjA5MDg1MjI0N30.gS2lG4W-f_4Vtsz7cYZK9PAX6pI8fdD0br7geqaae6E',
+            },
+            body: JSON.stringify({ tipo: pagoTipo, device_id: pagoDeviceId }),
+          });
+          
+          // Esperar un momento y recargar estado para que tome la compra
+          await new Promise(r => setTimeout(r, 1000));
+          
+          // Recargar estado desde el servidor
+          try {
+            const { data } = await supabase.rpc('obtener_estado', {
+              p_device_id: id,
+              p_fingerprint: fp,
+            });
+            if (data) {
+              setPensamientosUsados(data.usados || 0);
+              setVideosVistos(data.videos || 0);
+              setTieneIlimitado(data.ilimitado || false);
+              setExtrasComprados(data.extras || 0);
+            }
+          } catch(e) {}
+          
+          setMostrarMedalla({ emoji: '✅', nombre: '¡Pago exitoso! Notas agregadas' });
+          setTimeout(() => setMostrarMedalla(null), 3000);
+        } catch(e) {}
+      };
+      confirmarPago();
       
       // Limpiar URL
       window.history.replaceState({}, '', window.location.pathname);
