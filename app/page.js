@@ -395,7 +395,6 @@ export default function FireApp() {
           // Escuchar notificaciones en primer plano
           messaging.onMessage((payload) => {
             const data = payload.data || {};
-            // Mostrar toast con la notificación
             if (data.tipo === 'fire') {
               setMostrarExito(false);
               setTimeout(() => {
@@ -1057,33 +1056,34 @@ export default function FireApp() {
       {/* ===== STATS DE MIS NOTAS + HISTORIAL ===== */}
       {pantalla === 'misnotas' && !cargandoMisNotas && (
         <>
+          {/* HOY - Notas activas y fuegos del día */}
           <div style={S.misNotasStats}>
             <div style={S.statItem}>
               <span style={S.statNumber}>{misNotas.length}</span>
-              <span style={S.statLabel}>activas</span>
+              <span style={S.statLabel}>notas activas</span>
             </div>
             <div style={S.statDivider} />
             <div style={S.statItem}>
               <span style={S.statNumber}>{totalFires}</span>
-              <span style={S.statLabel}>🔥 hoy</span>
-            </div>
-            <div style={S.statDivider} />
-            <div style={S.statItem}>
-              <span style={{...S.statNumber, color: COLORS.gold}}>{misEstadisticas.total_fires_recibidos.toLocaleString()}</span>
-              <span style={S.statLabel}>🔥 total</span>
+              <span style={S.statLabel}>🔥 del día</span>
             </div>
           </div>
           
+          {/* HISTORIAL - Totales permanentes */}
           <div style={S.historialBox}>
             <div style={S.historialHeader}>
-              <span style={{ fontSize: '18px' }}>🏆</span>
+              <span style={{ fontSize: '18px' }}>📊</span>
               <span style={S.historialTitle}>Tu Historial</span>
             </div>
             
             <div style={S.historialStats}>
               <div style={S.historialStatItem}>
                 <span style={S.historialStatNumber}>{misEstadisticas.total_notas_publicadas}</span>
-                <span style={S.historialStatLabel}>notas publicadas</span>
+                <span style={S.historialStatLabel}>notas soltadas</span>
+              </div>
+              <div style={S.historialStatItem}>
+                <span style={{...S.historialStatNumber, color: COLORS.gold}}>{misEstadisticas.total_fires_recibidos.toLocaleString()}</span>
+                <span style={S.historialStatLabel}>🔥 recibidos</span>
               </div>
               <div style={S.historialStatItem}>
                 <span style={S.historialStatNumber}>{misEstadisticas.mejor_nota_fires.toLocaleString()}</span>
@@ -1105,7 +1105,7 @@ export default function FireApp() {
               const medallasPendientes = medallas.filter(m => !logros[m.key]);
               
               return (
-                <div style={{ textAlign: 'center' }}>
+                <div style={{ textAlign: 'center', borderTop: `1px solid ${COLORS.bgCard}`, paddingTop: '16px' }}>
                   <p style={{ fontSize: '14px', fontWeight: '600', color: COLORS.gold, marginBottom: '16px' }}>
                     🏅 Tus Medallas
                   </p>
@@ -1165,6 +1165,44 @@ export default function FireApp() {
                 </div>
               );
             })()}
+          </div>
+          
+          {/* COMPARTIR */}
+          <div style={{ padding: '0 16px 8px 16px' }}>
+            <button
+              onClick={() => {
+                const shareData = {
+                  title: '🔥 Fire Notes',
+                  text: 'Pensamientos anónimos cerca de ti. Todo desaparece en 24h.',
+                  url: 'https://firenotesapp.com',
+                };
+                if (navigator.share) {
+                  navigator.share(shareData).catch(() => {});
+                } else {
+                  navigator.clipboard.writeText('🔥 Fire Notes — Pensamientos anónimos cerca de ti. firenotesapp.com');
+                  setMostrarMedalla({ emoji: '📋', nombre: 'Link copiado!' });
+                  setTimeout(() => setMostrarMedalla(null), 2000);
+                }
+              }}
+              style={{
+                width: '100%',
+                padding: '12px',
+                borderRadius: '12px',
+                border: `1px solid ${COLORS.purple}40`,
+                background: 'transparent',
+                color: COLORS.purpleLight,
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                fontFamily: "'Space Grotesk', sans-serif",
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+              }}
+            >
+              <span>📤</span> Invita amigos a Fire Notes
+            </button>
           </div>
         </>
       )}
