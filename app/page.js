@@ -21,6 +21,17 @@ const COOLDOWN_SECONDS = 30;
 // Cloudflare Turnstile (CAPTCHA)
 const TURNSTILE_SITE_KEY = '0x4AAAAAAC1muhrmP2gp6FCG';
 
+// Firebase Config (Push Notifications)
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDGbIhSiRh3XxuaOfCaNO7MCTfMrVdlaLM",
+  authDomain: "fire-notes-f161a.firebaseapp.com",
+  projectId: "fire-notes-f161a",
+  storageBucket: "fire-notes-f161a.firebasestorage.app",
+  messagingSenderId: "16344396623",
+  appId: "1:16344396623:web:f8b39b7075b0202573cb3a"
+};
+const FIREBASE_VAPID_KEY = 'BK1DYJHZUlNM8Vx0Ete2aX-Dyz-9vtXcy5h7c7sa-Qq3K2MWHZ18FAzOM4jO0UEz51U2J82ytUPbaP_BFaU_GFI';
+
 // ============================================================
 // COLORES - PALETA FIRE NOTES
 // ============================================================
@@ -257,12 +268,19 @@ export default function FireApp() {
   const [turnstileLoaded, setTurnstileLoaded] = useState(false);
   const turnstileRef = useRef(null);
 
+  // Push Notifications
+  const [fcmToken, setFcmToken] = useState(null);
+  const firebaseMessagingRef = useRef(null);
+  
+  // Medal toast
+  const [mostrarMedalla, setMostrarMedalla] = useState(null); // { emoji, nombre }
+
   // [FIX-3] Debounce refs para prevenir spam de acciones
   const fireDebounceRef = useRef(new Set()); // IDs en proceso
   const reporteDebounceRef = useRef(new Set()); // IDs ya reportados en esta sesión
 
   // --- COMPUTED ---
-  const totalDisponible = 3 + videosVistos + extrasComprados;
+  const totalDisponible = MAX_NOTAS_GRATIS + videosVistos + extrasComprados;
   const puedeEscribir = pensamientosUsados < totalDisponible;
   const totalFires = misNotas.reduce((sum, nota) => sum + (nota.fires || 0), 0);
 
@@ -323,6 +341,81 @@ export default function FireApp() {
       setMostrarBienvenida(true);
       localStorage.setItem('fire_visited', 'true');
     }
+
+    // Cargar Firebase para Push Notifications
+    const loadFirebase = async () => {
+      try {
+        // Cargar Firebase SDK via CDN
+        if (!window.firebase) {
+          await new Promise((resolve, reject) => {
+            const script1 = document.createElement('script');
+            script1.src = 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js';
+            script1.onload = () => {
+              const script2 = document.createElement('script');
+              script2.src = 'https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js';
+              script2.onload = resolve;
+              script2.onerror = reject;
+              document.head.appendChild(script2);
+            };
+            script1.onerror = reject;
+            document.head.appendChild(script1);
+          });
+        }
+        
+        // Inicializar Firebase
+        if (!window.firebase.apps?.length) {
+          window.firebase.initializeApp(FIREBASE_CONFIG);
+        }
+        
+        const messaging = window.firebase.messaging();
+        firebaseMessagingRef.current = messaging;
+        
+        // Registrar service worker
+        if ('serviceWorker' in navigator) {
+          const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+          
+          // Pedir permiso de notificaciones
+          const permission = await Notification.requestPermission();
+          if (permission === 'granted') {
+            const token = await messaging.getToken({
+              vapidKey: FIREBASE_VAPID_KEY,
+              serviceWorkerRegistration: registration,
+            });
+            if (token) {
+              setFcmToken(token);
+              // Guardar token en Supabase
+              await supabase.from('push_tokens').upsert({
+                device_id: id,
+                fcm_token: token,
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'device_id' });
+            }
+          }
+          
+          // Escuchar notificaciones en primer plano
+          messaging.onMessage((payload) => {
+            const data = payload.data || {};
+            // Mostrar toast con la notificación
+            if (data.tipo === 'fire') {
+              setMostrarExito(false);
+              setTimeout(() => {
+                setMostrarMedalla({ emoji: '🔥', nombre: data.body || 'Tu nota recibió fuego!' });
+                setTimeout(() => setMostrarMedalla(null), 3000);
+              }, 100);
+            } else if (data.tipo === 'medalla') {
+              setMostrarMedalla({ emoji: data.emoji || '🏅', nombre: data.body || 'Nueva medalla!' });
+              setTimeout(() => setMostrarMedalla(null), 4000);
+            } else if (data.tipo === 'zona') {
+              setMostrarMedalla({ emoji: '📍', nombre: data.body || 'Actividad cerca de ti!' });
+              setTimeout(() => setMostrarMedalla(null), 3000);
+            }
+          });
+        }
+      } catch (e) {
+        // Push notifications no disponibles - no es crítico
+      }
+    };
+    loadFirebase();
 
     if (navigator.geolocation) {
       setUbicacionStatus('obteniendo');
@@ -729,6 +822,24 @@ export default function FireApp() {
           }
           return next;
         });
+        
+        // Enviar push notification al autor de la nota (solo cuando se da fire, no cuando se quita)
+        if (data.liked) {
+          try {
+            fetch('https://xjzoabsuzbqxkriamqed.supabase.co/functions/v1/send-notification', {
+              method: 'POST',
+              headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhqem9hYnN1emJxeGtyaWFtcWVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyNzYyNDcsImV4cCI6MjA5MDg1MjI0N30.gS2lG4W-f_4Vtsz7cYZK9PAX6pI8fdD0br7geqaae6E',
+              },
+              body: JSON.stringify({
+                pensamiento_id: notaId,
+                fires: data.fires,
+                tipo: 'fire',
+              }),
+            }).catch(() => {}); // No esperar ni bloquear si falla
+          } catch (e) {}
+        }
       }
     } catch (e) {
       // Revertir cambio optimista
@@ -1460,6 +1571,17 @@ export default function FireApp() {
 
       {/* ===== TOASTS & MODALS ===== */}
       {mostrarExito && <div style={S.toast}>🔥 Nota publicada</div>}
+      
+      {/* Medal toast */}
+      {mostrarMedalla && (
+        <div style={{
+          ...S.toast,
+          background: 'linear-gradient(135deg, #FF6B35, #FFD700)',
+          boxShadow: '0 4px 24px rgba(255, 215, 0, 0.5)',
+        }}>
+          {mostrarMedalla.emoji} {mostrarMedalla.nombre}
+        </div>
+      )}
 
       {/* Modal: Bienvenida */}
       {mostrarBienvenida && (
