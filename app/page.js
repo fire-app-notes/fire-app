@@ -1908,7 +1908,7 @@ export default function FireApp() {
               <span style={S.modalOptIcon}>🔥</span>
               <div>
                 <strong>+3 pensamientos</strong>
-                <p style={S.modalOptDesc}>$10 MXN</p>
+                <p style={S.modalOptDesc}>$10 MXN <span style={{ color: COLORS.gray, fontSize: '11px' }}>≈ $0.60 USD</span></p>
               </div>
             </button>
 
@@ -1916,7 +1916,7 @@ export default function FireApp() {
               <span style={S.modalOptIcon}>⭐</span>
               <div>
                 <strong>+10 pensamientos</strong>
-                <p style={{...S.modalOptDesc, color: COLORS.gold}}>$25 MXN · Mejor valor</p>
+                <p style={{...S.modalOptDesc, color: COLORS.gold}}>$25 MXN <span style={{ fontSize: '11px', opacity: 0.8 }}>≈ $1.50 USD</span> · Mejor valor</p>
               </div>
             </button>
 
