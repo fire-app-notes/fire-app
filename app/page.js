@@ -1275,7 +1275,7 @@ export default function FireApp() {
                     {nivelFuego >= 2 && (
                       <div style={{
                         position: 'absolute',
-                        top: '8px', left: '8px',
+                        top: '8px', right: '8px',
                         fontSize: '11px',
                         backgroundColor: nivelFuego >= 3 ? '#FF4500' : '#FF6B35',
                         color: '#fff',
@@ -1292,16 +1292,17 @@ export default function FireApp() {
                     {/* Badge Top 1 */}
                     {esTop && (
                       <div style={{
-                        position: 'absolute', top: '-10px', left: '50%', transform: 'translateX(-50%)',
+                        position: 'absolute', top: '-14px', left: '50%', transform: 'translateX(-50%)',
                         backgroundColor: '#FFD700',
                         color: '#000',
-                        fontSize: '11px',
+                        fontSize: '13px',
                         fontWeight: '700',
-                        padding: '3px 12px',
-                        borderRadius: '10px',
+                        padding: '4px 16px',
+                        borderRadius: '12px',
                         zIndex: 10,
-                        boxShadow: '0 2px 8px rgba(255, 215, 0, 0.5)',
-                        display: 'flex', alignItems: 'center', gap: '4px',
+                        boxShadow: '0 2px 10px rgba(255, 215, 0, 0.6)',
+                        display: 'flex', alignItems: 'center', gap: '6px',
+                        whiteSpace: 'nowrap',
                       }}>
                         👑 TOP 1
                       </div>
