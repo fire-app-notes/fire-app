@@ -194,12 +194,14 @@ function validarTexto(texto) {
   if (trimmed.length === 0 || trimmed.length > 200) return false;
   
   // Bloquear HTML tags, scripts, URLs
-  const peligroso = /<[^>]*>|javascript:|on\w+\s*=|data:/i;
+  const peligroso = /<[^>]*>|javascript:|on\w+\s*=|data:|https?:\/\/|www\./i;
   if (peligroso.test(trimmed)) return false;
   
-  // Solo caracteres seguros
-  const regex = /^[a-zA-ZáéíóúüñÁÉÍÓÚÜÑàèìòùÀÈÌÒÙâêîôûÂÊÎÔÛäëïöüÄËÏÖÜçÇ\s.,;:!?¡¿'"()\-0-9]+$/;
-  return regex.test(trimmed);
+  // Bloquear caracteres peligrosos: @ # $ % ^ & * = + / \ | ~ ` { } [ ] < >
+  const caracteresNoPermitidos = /[@#$%^&*=+/\\|~`{}\[\]<>]/;
+  if (caracteresNoPermitidos.test(trimmed)) return false;
+  
+  return true;
 }
 
 // [FIX-2] Sanitizar texto para display (prevenir XSS en render)
@@ -739,7 +741,7 @@ export default function FireApp() {
     }
     if (!puedeEscribir) { setMostrarModal(true); return; }
     if (!validarTexto(texto)) {
-      setError('Solo letras, números y puntuación básica. Máximo 200 caracteres.');
+      setError('Texto no válido. Máximo 200 caracteres. No se permiten links.');
       return;
     }
 
