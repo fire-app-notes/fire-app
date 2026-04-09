@@ -45,7 +45,7 @@ self.addEventListener('notificationclick', (event) => {
         }
       }
       // Si no, abre una nueva
-      return clients.openWindow('/');
+      return clients.openWindow('/app');
     })
   );
 });
