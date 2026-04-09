@@ -134,8 +134,8 @@ export default function LandingPage() {
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '32px', marginTop: '60px' }}>
           {[
-            { icon: '📍', step: '01', title: 'Ábrela donde estés', desc: 'Saliendo del cine, en un restaurante nuevo, esperando en el aeropuerto, caminando por un pueblo mágico. Ábrela y descubre qué pensamientos flotan ahí.' },
-            { icon: '✏️', step: '02', title: 'Suelta lo que sientes', desc: 'Es un lugar para decir lo que sientes de verdad. Confesiones, desahogos, lo que nunca te atreves a decir con tu nombre. Pero también para recomendar ese lugar increíble que acabas de descubrir.' },
+            { icon: '📍', step: '01', title: 'Tu nota se queda flotando ahí', desc: 'Escribes algo y tu pensamiento se queda flotando justo donde lo soltaste. Cualquier persona que pase por ahí o esté a menos de 1km puede leerlo. Como dejar un mensaje invisible en el aire que solo los de cerca pueden ver.' },
+            { icon: '✏️', step: '02', title: 'Di lo que de verdad piensas', desc: 'Recomienda ese lugar que nadie conoce. Confiesa lo que nunca te atreves a decir con tu nombre. Opina del lugar donde estás. Desahógate. Enamórate. Quéjate. Suelta lo que quieras.' },
             { icon: '🔥', step: '03', title: 'Conecta con fuegos', desc: 'Cuando tu nota recibe fuegos no es porque les gustó tu foto o tu nombre. Es porque lo que escribiste conectó de verdad. Eso hace cada fuego algo genuino.' },
           ].map((item, i) => (
             <div key={i} style={{ padding: '36px 28px', borderRadius: '20px', backgroundColor: COLORS.card, border: '1px solid rgba(155,89,182,0.1)', position: 'relative', overflow: 'hidden', transition: 'all 0.6s cubic-bezier(0.16, 1, 0.3, 1)', transitionDelay: `${i * 0.15}s`, opacity: isVisible('como-funciona') ? 1 : 0, transform: isVisible('como-funciona') ? 'translateY(0)' : 'translateY(30px)' }}>
@@ -239,13 +239,15 @@ export default function LandingPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '16px' }}>
             {[
               { emoji: '🏘️', place: 'Tu colonia', sub: 'La voz de tu barrio' },
-              { emoji: '🌳', place: 'El parque', sub: 'Pensamientos al aire libre' },
+              { emoji: '🍸', place: 'Bares', sub: 'Ricos los tragos de aquí' },
+              { emoji: '🪩', place: 'Antros', sub: 'Buen DJ, buena vibra' },
               { emoji: '🎵', place: 'Conciertos', sub: 'La vibra en tiempo real' },
               { emoji: '🏫', place: 'Universidades', sub: 'Lo que se siente en el campus' },
               { emoji: '🍔', place: 'Restaurantes', sub: 'Opiniones honestas' },
               { emoji: '🏖️', place: 'Pueblos mágicos', sub: 'Tips de quien ya estuvo ahí' },
               { emoji: '🏟️', place: 'El estadio', sub: 'Pasión sin filtro' },
               { emoji: '☕', place: 'Cafeterías', sub: 'Pensamientos con café' },
+              { emoji: '🌳', place: 'El parque', sub: 'Pensamientos al aire libre' },
               { emoji: '🚇', place: 'El metro', sub: 'Historias en movimiento' },
               { emoji: '🎭', place: 'Festivales', sub: 'La fiesta por dentro' },
               { emoji: '🏥', place: 'Salas de espera', sub: 'Desahogos reales' },
@@ -254,6 +256,8 @@ export default function LandingPage() {
               { emoji: '🏋️', place: 'El gym', sub: 'Motivación anónima' },
               { emoji: '🎬', place: 'El cine', sub: '¿Valió la pena?' },
               { emoji: '🏠', place: 'Tu casa', sub: 'Lo que sientes a solas' },
+              { emoji: '🎓', place: 'La prepa', sub: 'Lo que nadie dice en clase' },
+              { emoji: '🌊', place: 'La playa', sub: 'Confesiones frente al mar' },
             ].map((item, i) => (
               <div key={i} style={{ padding: '20px 16px', borderRadius: '16px', backgroundColor: COLORS.card, border: '1px solid rgba(155,89,182,0.08)', transition: 'all 0.4s ease', transitionDelay: `${i * 0.03}s`, opacity: isVisible('donde') ? 1 : 0, transform: isVisible('donde') ? 'translateY(0) scale(1)' : 'translateY(15px) scale(0.95)', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '6px' }}>
                 <span style={{ fontSize: '32px' }}>{item.emoji}</span>
