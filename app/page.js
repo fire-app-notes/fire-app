@@ -321,6 +321,11 @@ export default function FireApp() {
     setDeviceId(id);
     setFingerprint(fp);
 
+    // Registrar Service Worker para PWA
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+
     // [FIX-4] ELIMINADO: fetch a ipify.org
     // La IP del usuario DEBE obtenerse del lado del servidor (headers del request).
     // Enviar la IP desde el cliente permite que un atacante mande cualquier IP falsa.
