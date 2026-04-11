@@ -14,7 +14,7 @@ const supabase = createClient(
 // CONSTANTES DE LA APP
 // ============================================================
 const RADIO_KM = 1;
-const MAX_NOTAS_GRATIS = 5;
+const MAX_NOTAS_GRATIS = 3;
 const MAX_VIDEOS_DIA = 3;
 const COOLDOWN_SECONDS = 30;
 
@@ -1046,8 +1046,8 @@ export default function FireApp() {
             ) : (
               <div style={S.contadorNotas}>
                 {[...Array(MAX_NOTAS_GRATIS)].map((_, i) => {
-                  const restantes = totalDisponible - pensamientosUsados;
-                  const disponible = i < restantes;
+                  const gratisRestantes = Math.max(0, MAX_NOTAS_GRATIS + videosVistos - pensamientosUsados);
+                  const disponible = i < gratisRestantes;
                   return (
                     <span key={i} style={{
                       fontSize: '14px',
@@ -1059,6 +1059,14 @@ export default function FireApp() {
                     </span>
                   );
                 })}
+                {extrasComprados > 0 && (
+                  <span style={{
+                    fontSize: '11px', color: COLORS.gold, fontWeight: '700',
+                    marginLeft: '4px', fontFamily: "'Space Grotesk', sans-serif",
+                  }}>
+                    +{extrasComprados}
+                  </span>
+                )}
               </div>
             )}
           </div>
