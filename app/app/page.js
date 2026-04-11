@@ -1909,16 +1909,6 @@ export default function FireApp() {
             <h2 style={S.modalTitle}>Se acabaron tus notas 🔥</h2>
             <p style={S.modalSub}>Consigue más para seguir soltando:</p>
 
-            {videosVistos < MAX_VIDEOS_DIA && (
-              <button onClick={verVideo} style={S.modalOpt}>
-                <span style={S.modalOptIcon}>🎬</span>
-                <div>
-                  <strong>Ver un video</strong>
-                  <p style={S.modalOptDesc}>+1 nota gratis ({MAX_VIDEOS_DIA - videosVistos} restantes)</p>
-                </div>
-              </button>
-            )}
-
             <button onClick={() => comprar('extra3')} style={S.modalOpt}>
               <span style={S.modalOptIcon}>🔥</span>
               <div>
@@ -1934,15 +1924,6 @@ export default function FireApp() {
                 <p style={{...S.modalOptDesc, color: COLORS.gold}}>$25 MXN <span style={{ fontSize: '11px', opacity: 0.8 }}>≈ $1.50 USD</span> · Mejor valor</p>
               </div>
             </button>
-
-            <div style={S.paymentMethods}>
-              <p style={S.paymentTitle}>Aceptamos</p>
-              <div style={S.paymentIcons}>
-                <span style={S.paymentIcon}>💳</span>
-                <span style={S.paymentIcon}>₿</span>
-              </div>
-              <p style={S.paymentText}>Tarjetas y Bitcoin</p>
-            </div>
 
             <button onClick={() => setMostrarModal(false)} style={S.btnTerciario}>
               Cerrar
