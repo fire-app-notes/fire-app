@@ -1920,13 +1920,18 @@ export default function FireApp() {
               </div>
             </button>
 
-            <button onClick={() => comprar('extra10')} style={{...S.modalOpt, border: `2px solid ${COLORS.gold}`}}>
+           <button onClick={() => comprar('extra10')} style={{...S.modalOpt, border: `2px solid ${COLORS.gold}`}}>
               <span style={S.modalOptIcon}>⭐</span>
               <div>
                 <strong>+10 pensamientos</strong>
                 <p style={{...S.modalOptDesc, color: COLORS.gold}}>$25 MXN <span style={{ fontSize: '11px', opacity: 0.8 }}>≈ $1.50 USD</span> · Mejor valor</p>
               </div>
             </button>
+
+            <div style={{ textAlign: 'center', padding: '12px', marginBottom: '8px' }}>
+              <p style={{ fontSize: '12px', color: COLORS.gray, marginBottom: '6px' }}>Aceptamos</p>
+              <p style={{ fontSize: '13px', color: COLORS.grayLight, fontWeight: '500' }}>💳 Tarjetas  ·  🏪 OXXO</p>
+            </div>
 
             <button onClick={() => setMostrarModal(false)} style={S.btnTerciario}>
               Cerrar
