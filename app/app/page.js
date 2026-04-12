@@ -1078,11 +1078,14 @@ export default function FireApp() {
 
       {/* DEBUG BAR */}
       {mostrarDebug && ubicacion && (
-        <div style={S.debugBar}>
+        <div style={S.debugBar} onClick={() => {
+          navigator.clipboard.writeText(deviceId);
+          alert('ID copiado: ' + deviceId);
+        }}>
           📍 {ubicacion.lat.toFixed(5)}, {ubicacion.lng.toFixed(5)} | 
           ±{Math.round(ubicacion.accuracy || 0)}m | 
           📊 {notas.length} notas | 
-          🆔 {deviceId.slice(0,12)}...
+          🆔 {deviceId.slice(0,12)}... (toca para copiar)
         </div>
       )}
 
