@@ -283,7 +283,7 @@ export default function FireApp() {
 
   // --- COMPUTED ---
   const totalDisponible = MAX_NOTAS_GRATIS + videosVistos + extrasComprados;
-  const puedeEscribir = pensamientosUsados < totalDisponible;
+  const puedeEscribir = tieneIlimitado || pensamientosUsados < totalDisponible;
   const totalFires = misNotas.reduce((sum, nota) => sum + (nota.fires || 0), 0);
 
   const watchIdRef = useRef(null);
