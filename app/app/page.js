@@ -823,10 +823,13 @@ export default function FireApp() {
     }
   };
 
-  // ============================================================
+// ============================================================
   // [FIX-9] TOGGLE FIRE - CON DEBOUNCE ANTI-SPAM
   // ============================================================
   const hacerFire = async (notaId) => {
+    // No permitir darte fuego a ti mismo
+    if (misNotas.some(n => n.id === notaId)) return;
+    
     // Prevenir doble-click / spam
     if (fireDebounceRef.current.has(notaId)) return;
     fireDebounceRef.current.add(notaId);
