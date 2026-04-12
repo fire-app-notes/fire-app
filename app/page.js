@@ -120,15 +120,21 @@ export default function LandingPage() {
           🔥 Abrir Fire Notes
         </a>
 
-        <p style={{ fontSize: '13px', color: COLORS.gray, marginTop: '16px', position: 'relative', zIndex: 1, animation: 'heroText 1s ease-out 0.7s both' }}>
-          Funciona en cualquier navegador. Nada que instalar.
-        </p>
+        <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', position: 'relative', zIndex: 1, animation: 'heroText 1s ease-out 0.7s both' }}>
+          <p style={{ fontSize: '13px', color: COLORS.gray }}>
+            Disponible en tu navegador. Sin descargas.
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '24px', backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+            <span style={{ fontSize: '18px' }}>▶️</span>
+            <span style={{ fontSize: '13px', color: COLORS.grayLight, fontWeight: '500', letterSpacing: '0.5px' }}>PRÓXIMAMENTE EN GOOGLE PLAY</span>
+          </div>
+        </div>
 
-        <div style={{ position: 'absolute', bottom: '32px', left: '50%', transform: 'translateX(-50%)', animation: 'bounce 2s ease infinite', opacity: 0.4, fontSize: '24px', color: COLORS.gray }}>↓</div>
+        <div style={{ position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)', animation: 'bounce 2s ease infinite', opacity: 0.4, fontSize: '24px', color: COLORS.gray }}>↓</div>
       </section>
 
       {/* CÓMO FUNCIONA */}
-      <section id="como-funciona" data-animate style={{ padding: '100px 24px', maxWidth: '1100px', margin: '0 auto', opacity: isVisible('como-funciona') ? 1 : 0, transform: isVisible('como-funciona') ? 'translateY(0)' : 'translateY(40px)', transition: 'all 0.8s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+      <section id="como-funciona" data-animate style={{ padding: '60px 24px', maxWidth: '1100px', margin: '0 auto', opacity: isVisible('como-funciona') ? 1 : 0, transform: isVisible('como-funciona') ? 'translateY(0)' : 'translateY(40px)', transition: 'all 0.8s cubic-bezier(0.16, 1, 0.3, 1)' }}>
         <h2 style={sectionTitleStyle}>Cómo funciona</h2>
         <p style={sectionSubStyle}>Tres pasos. Cero cuentas. Cero datos.</p>
 
