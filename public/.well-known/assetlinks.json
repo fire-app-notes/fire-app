@@ -1,8 +1,12 @@
-[{
-      "relation": ["delegate_permission/common.handle_all_urls"],
-      "target": {
-        "namespace": "android_app",
-        "package_name": "com.firenotesapp.twa",
-        "sha256_cert_fingerprints": ["54:F5:3B:D9:4F:EF:A5:4E:27:4F:6C:C2:8F:30:4A:7B:30:FC:47:D3:5E:37:8C:91:4F:0E:9B:2A:D9:82:06:CE"]
-      }
-    }]
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.firenotesapp.twa",
+      "sha256_cert_fingerprints":
+        ["97:25:C0:2E:80:D0:0A:C7:44:53:72:2A:E2:28:09:DE:58:DC:69:E2:8D:EE:90:F5:2F:B8:EB:DA:B6:FE:D1:6B",
+         "54:F5:3B:D9:4F:EF:A5:4E:27:4F:6C:C2:8F:30:4A:7B:30:FC:47:D3:5E:37:8C:91:4F:0E:9B:2A:D9:82:06:CE"]
+    }
+  }
+]
