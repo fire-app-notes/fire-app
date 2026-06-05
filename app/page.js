@@ -319,7 +319,7 @@ export default function LandingPage() {
               </div>
             ))}
           </div>
-          <p style={{ textAlign: 'center', fontSize: '13px', color: COLORS.gray, marginTop: '32px', fontStyle: 'italic' }}>Última actualización: Abril 2026 · Contacto: firenotesapp@gmail.com</p>
+          <p style={{ textAlign: 'center', fontSize: '13px', color: COLORS.gray, marginTop: '32px', fontStyle: 'italic' }}>Última actualización: Junio 2026 · Contacto: team@firenotesapp.com</p>
         </div>
       </section>
 
