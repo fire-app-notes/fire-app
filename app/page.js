@@ -40,18 +40,51 @@ export default function LandingPage() {
   const isVisible = (id) => visibleSections.has(id);
   const scrollTo = (id) => { setMenuOpen(false); document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' }); };
 
+  // estado: 'normal' | 'ardiendo' (popular, super incendiada) | 'cenizas' (muriendo por tiempo)
+  // medal: '🌟' (estrella/joya) | '🌋' (volcan) | null
   const exampleNotes = [
-    { text: 'El café de la esquina tiene los mejores chilaquiles de toda la colonia y nadie lo sabe 🫡', fires: 47, time: '3m', dist: '120m', medal: null },
-    { text: 'La chica que trabaja en la librería de Coyoacán tiene la sonrisa más bonita que he visto en mi vida', fires: 134, time: '18m', dist: '340m', medal: null },
-    { text: 'Llevo 3 años viviendo aquí y hoy por primera vez un vecino me dijo buenos días. Casi lloro.', fires: 89, time: '45m', dist: '90m', medal: null },
-    { text: 'A los tacos del señor de la plaza NO le pongan la salsa verde. Confíen en mí. 💀', fires: 203, time: '1h', dist: '200m', medal: null },
-    { text: 'Hoy me senté en esta banca a llorar y un señor que ni conozco se sentó a mi lado sin decir nada. A veces el silencio es el abrazo más fuerte.', fires: 12847, time: '6h', dist: '30m', medal: '🌟' },
-    { text: 'Estoy en este concierto solo porque me dejaron y saben qué? La estoy pasando mejor que nunca 🔥', fires: 312, time: '8m', dist: '50m', medal: null },
-    { text: 'Le acabo de decir a mi jefe que renuncio. Estoy temblando pero sonriendo. No hay vuelta atrás.', fires: 178, time: '2m', dist: '400m', medal: null },
-    { text: 'Este atardecer desde el mirador de Valle de Bravo es de las cosas más bonitas que he visto. Si estás aquí arriba, mira al cielo ahorita.', fires: 1453, time: '20m', dist: '150m', medal: '🌋' },
+    { text: 'El café de la esquina tiene los mejores chilaquiles de toda la colonia y nadie lo sabe 🫡', fires: 47, time: '3m', dist: '120m', medal: null, estado: 'normal' },
+    { text: 'La chica que trabaja en la librería de Coyoacán tiene la sonrisa más bonita que he visto en mi vida', fires: 134, time: '18m', dist: '340m', medal: null, estado: 'ardiendo' },
+    { text: 'Llevo 3 años viviendo aquí y hoy por primera vez un vecino me dijo buenos días. Casi lloro.', fires: 89, time: '23h', dist: '90m', medal: null, estado: 'cenizas' },
+    { text: 'A los tacos del señor de la plaza NO le pongan la salsa verde. Confíen en mí. 💀', fires: 203, time: '1h', dist: '200m', medal: null, estado: 'normal' },
+    { text: 'Hoy me senté en esta banca a llorar y un señor que ni conozco se sentó a mi lado sin decir nada. A veces el silencio es el abrazo más fuerte.', fires: 12847, time: '6h', dist: '30m', medal: '🌟', estado: 'normal' },
+    { text: 'Estoy en este concierto solo porque me dejaron y saben qué? La estoy pasando mejor que nunca 🔥', fires: 312, time: '8m', dist: '50m', medal: null, estado: 'ardiendo' },
+    { text: 'Le acabo de decir a mi jefe que renuncio. Estoy temblando pero sonriendo. No hay vuelta atrás.', fires: 178, time: '2m', dist: '400m', medal: null, estado: 'normal' },
+    { text: 'Este atardecer desde el mirador de Valle de Bravo es de las cosas más bonitas que he visto. Si estás aquí arriba, mira al cielo ahorita.', fires: 1453, time: '20m', dist: '150m', medal: '🌋', estado: 'normal' },
   ];
 
   const navLinkStyle = { color: COLORS.grayLight, textDecoration: 'none', fontSize: '14px', fontWeight: '500', cursor: 'pointer' };
+
+  // ====== Helper de estilo por nota (joya / volcan / ardiendo / cenizas / normal) ======
+  const getNotaVisual = (note) => {
+    const esJoya = note.medal === '🌟';
+    const esVolcan = note.medal === '🌋';
+    const ardiendo = note.estado === 'ardiendo';
+    const cenizas = note.estado === 'cenizas';
+
+    let bg = COLORS.cream;
+    let texto = COLORS.noteText;
+    let borde = 'none';
+    let shadow = '0 8px 40px rgba(0,0,0,0.4)';
+    let lineas = true;
+
+    if (esJoya) {
+      bg = '#2D1B4E'; texto = '#FFFFFF'; borde = '2px solid #FFD700'; lineas = false;
+      shadow = '0 0 20px rgba(255, 215, 0, 0.4), 0 0 40px rgba(255, 215, 0, 0.2), 0 8px 40px rgba(0,0,0,0.5)';
+    } else if (esVolcan) {
+      bg = '#1a1a2e'; texto = '#FFFFFF'; borde = '2px solid #FF6B35'; lineas = false;
+      shadow = '0 0 15px rgba(255, 107, 53, 0.4), 0 8px 40px rgba(0,0,0,0.4)';
+    } else if (cenizas) {
+      bg = 'radial-gradient(130% 95% at 50% 120%, #1c0d05, #3a1a08 32%, #5a2e12 62%, #6b3a18 88%)';
+      texto = '#FFE8D6'; borde = '2px solid #7a3b15'; lineas = false;
+      shadow = '0 0 22px rgba(160,60,15,0.55), 0 8px 40px rgba(0,0,0,0.5)';
+    } else if (ardiendo) {
+      bg = COLORS.cream; texto = COLORS.noteText; borde = '2px solid #FF4500'; lineas = true;
+      shadow = '0 0 24px rgba(255,69,0,0.55), 0 0 48px rgba(255,69,0,0.3), 0 8px 40px rgba(0,0,0,0.4)';
+    }
+
+    return { esJoya, esVolcan, ardiendo, cenizas, bg, texto, borde, shadow, lineas };
+  };
 
   return (
     <div style={{ backgroundColor: COLORS.bg, color: COLORS.white, minHeight: '100vh', overflowX: 'hidden' }}>
@@ -161,50 +194,119 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* LO QUE LE DA VIDA AL FUEGO (nuevo bloque explicativo del feeling) */}
+      <section id="fuego" data-animate style={{ padding: '40px 24px 20px', maxWidth: '1100px', margin: '0 auto', opacity: isVisible('fuego') ? 1 : 0, transform: isVisible('fuego') ? 'translateY(0)' : 'translateY(40px)', transition: 'all 0.8s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+        <h2 style={sectionTitleStyle}>Las notas están vivas</h2>
+        <p style={{ ...sectionSubStyle, marginBottom: '48px' }}>El tiempo las consume. Los fuegos las encienden. Las mejores brillan como joyas.</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '20px' }}>
+          {[
+            { emoji: '📝', title: 'Recién escrita', desc: 'Papel limpio. Tu pensamiento acaba de aterrizar en el mapa.', color: 'rgba(155,89,182,0.15)' },
+            { emoji: '🔥', title: 'En llamas', desc: 'Cuando recibe muchos fuegos, la nota arde viva: brilla naranja, llamea. Conectó.', color: 'rgba(255,69,0,0.18)' },
+            { emoji: '💨', title: 'Volviéndose cenizas', desc: 'Mientras se acerca a las 24h, el papel se carboniza y suelta humo. Está por desaparecer para siempre.', color: 'rgba(120,40,10,0.25)' },
+            { emoji: '👑', title: 'La joya de la zona', desc: 'La nota #1 con más fuegos se vuelve una joya dorada con corona. La mejor de tu área.', color: 'rgba(255,215,0,0.18)' },
+          ].map((item, i) => (
+            <div key={i} style={{ padding: '28px 22px', borderRadius: '18px', backgroundColor: COLORS.bgAlt, border: '1px solid rgba(155,89,182,0.1)', boxShadow: `inset 0 0 30px ${item.color}`, transition: 'all 0.6s ease', transitionDelay: `${i * 0.1}s`, opacity: isVisible('fuego') ? 1 : 0, transform: isVisible('fuego') ? 'translateY(0)' : 'translateY(20px)' }}>
+              <span style={{ fontSize: '36px', display: 'block', marginBottom: '12px' }}>{item.emoji}</span>
+              <h3 style={{ fontSize: '17px', fontWeight: '700', marginBottom: '8px', color: COLORS.white }}>{item.title}</h3>
+              <p style={{ fontSize: '14px', lineHeight: 1.6, color: COLORS.gray, margin: 0 }}>{item.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {/* NOTAS DE EJEMPLO */}
-      <section style={{ padding: '60px 24px 100px', maxWidth: '500px', margin: '0 auto', textAlign: 'center' }}>
+      <section style={{ padding: '40px 24px 100px', maxWidth: '500px', margin: '0 auto', textAlign: 'center' }}>
         <div id="demo-note" data-animate style={{ opacity: isVisible('demo-note') ? 1 : 0, transform: isVisible('demo-note') ? 'translateY(0)' : 'translateY(30px)', transition: 'all 0.8s cubic-bezier(0.16, 1, 0.3, 1)' }}>
           <h2 style={{ fontSize: '24px', fontWeight: '800', textAlign: 'center', marginBottom: '8px', color: COLORS.white }}>Esto se ve en Fire Notes</h2>
           <p style={{ fontSize: '14px', color: COLORS.gray, marginBottom: '32px' }}>Notas reales. Sin nombre. Sin perfil. Solo lo que alguien quiso decir.</p>
 
-          <div style={{ position: 'relative', minHeight: '200px' }}>
-            {exampleNotes.map((note, i) => (
-              <div key={i} style={{
-                position: i === activeNote ? 'relative' : 'absolute', top: 0, left: 0, right: 0,
-                backgroundColor: note.medal === '🌟' ? '#2D1B4E' : note.medal === '🌋' ? '#1a1a2e' : COLORS.cream,
-                borderRadius: '12px', padding: '24px', overflow: 'hidden',
-                boxShadow: note.medal === '🌟' ? '0 0 20px rgba(255, 215, 0, 0.4), 0 0 40px rgba(255, 215, 0, 0.2), 0 8px 40px rgba(0,0,0,0.5)' : note.medal === '🌋' ? '0 0 15px rgba(255, 107, 53, 0.4), 0 8px 40px rgba(0,0,0,0.4)' : '0 8px 40px rgba(0,0,0,0.4)',
-                transform: i === activeNote ? 'rotate(-1deg) scale(1)' : 'rotate(-1deg) scale(0.95)',
-                opacity: i === activeNote ? 1 : 0, transition: 'all 0.5s ease',
-                pointerEvents: i === activeNote ? 'auto' : 'none',
-                border: note.medal === '🌟' ? '2px solid #FFD700' : note.medal === '🌋' ? '2px solid #FF6B35' : 'none',
-              }}>
-                {!note.medal && <div style={{ position: 'absolute', inset: 0, background: 'repeating-linear-gradient(0deg, transparent, transparent 27px, rgba(0,0,0,0.04) 27px, rgba(0,0,0,0.04) 28px)', pointerEvents: 'none' }} />}
-                
-                {note.medal && (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginBottom: '10px', position: 'relative', zIndex: 5 }}>
-                    {note.medal === '🌟' && <span style={{ fontSize: '16px' }}>👑</span>}
-                    <span style={{ fontSize: '24px', filter: note.medal === '🌟' ? 'drop-shadow(0 0 8px gold)' : 'drop-shadow(0 0 4px #FF6B35)', animation: 'pulse 2s ease infinite' }}>{note.medal}</span>
-                    <span style={{ fontSize: '11px', fontWeight: '700', color: note.medal === '🌟' ? '#FFD700' : '#FF6B35', letterSpacing: '1.5px' }}>
-                      {note.medal === '🌟' ? 'ESTRELLA DORADA' : 'VOLCÁN'}
-                    </span>
-                    {note.medal === '🌟' && <span style={{ fontSize: '16px' }}>👑</span>}
-                  </div>
-                )}
+          <div style={{ position: 'relative', minHeight: '220px' }}>
+            {exampleNotes.map((note, i) => {
+              const v = getNotaVisual(note);
+              const activa = i === activeNote;
+              return (
+                <div key={i} style={{
+                  position: activa ? 'relative' : 'absolute', top: 0, left: 0, right: 0,
+                  background: v.bg, backgroundColor: typeof v.bg === 'string' && v.bg.startsWith('#') ? v.bg : undefined,
+                  borderRadius: '12px', padding: '24px', overflow: 'hidden',
+                  boxShadow: v.shadow,
+                  transform: activa ? 'rotate(-1deg) scale(1)' : 'rotate(-1deg) scale(0.95)',
+                  opacity: activa ? (v.cenizas ? 0.94 : 1) : 0, transition: 'all 0.5s ease',
+                  pointerEvents: activa ? 'auto' : 'none',
+                  border: v.borde,
+                  animation: activa ? (v.esJoya ? 'jewelL 2.6s ease-in-out infinite' : v.ardiendo ? 'infernoL 0.9s ease-in-out infinite' : v.cenizas ? 'dyingL 1.8s ease-in-out infinite' : 'none') : 'none',
+                }}>
+                  {/* Líneas de cuaderno (papel claro) */}
+                  {v.lineas && <div style={{ position: 'absolute', inset: 0, background: 'repeating-linear-gradient(0deg, transparent, transparent 27px, rgba(0,0,0,0.04) 27px, rgba(0,0,0,0.04) 28px)', pointerEvents: 'none' }} />}
 
-                <p style={{ color: note.medal ? '#FFFFFF' : COLORS.noteText, fontSize: note.medal ? '17px' : '16px', lineHeight: '28px', fontWeight: note.medal ? '500' : '400', position: 'relative', zIndex: 1, margin: 0, textAlign: 'left' }}>{note.text}</p>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', position: 'relative', zIndex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '12px', color: note.medal ? '#A0AEC0' : '#8B7355' }}>{note.time}</span>
-                    <span style={{ fontSize: '11px', color: note.medal ? '#A0AEC0' : '#A0937D', backgroundColor: note.medal ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)', padding: '2px 6px', borderRadius: '8px' }}>{note.dist}</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', border: note.medal === '🌟' ? '1.5px solid rgba(255,215,0,0.4)' : '1.5px solid rgba(255,107,53,0.3)', borderRadius: '20px', padding: '6px 14px', backgroundColor: note.medal === '🌟' ? 'rgba(255,215,0,0.15)' : 'rgba(255,107,53,0.1)' }}>
-                    <span style={{ fontSize: '16px' }}>🔥</span>
-                    <span style={{ fontWeight: '700', color: note.medal === '🌟' ? COLORS.gold : COLORS.orange, fontSize: '15px' }}>{note.fires.toLocaleString()}</span>
+                  {/* Carbonizado de orillas (cenizas) */}
+                  {v.cenizas && (
+                    <div style={{ position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none',
+                      background: 'radial-gradient(circle at 100% 0%, rgba(0,0,0,0.55), transparent 34%), radial-gradient(circle at 0% 0%, rgba(0,0,0,0.5), transparent 32%), radial-gradient(circle at 100% 100%, rgba(0,0,0,0.45), transparent 30%), radial-gradient(circle at 0% 100%, rgba(0,0,0,0.4), transparent 28%)' }} />
+                  )}
+
+                  {/* Llamas lamiendo desde abajo (ardiendo / cenizas) */}
+                  {(v.ardiendo || v.cenizas) && (
+                    <div className="fnFlames" style={{
+                      position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 2, pointerEvents: 'none',
+                      height: v.ardiendo ? '46px' : '42px',
+                      opacity: v.ardiendo ? 0.82 : 0.7,
+                      background: v.ardiendo
+                        ? 'linear-gradient(to top, #FFD000, #FF4500 42%, #FF6B35 72%, transparent)'
+                        : 'linear-gradient(to top, #FF5500, #C9450F 45%, #8a3a18 78%, transparent)',
+                    }} />
+                  )}
+
+                  {/* Humo (cenizas) */}
+                  {v.cenizas && (
+                    <>
+                      <div className="fnSmoke" style={{ left: '32%', animationDelay: '0s' }} />
+                      <div className="fnSmoke" style={{ left: '56%', animationDelay: '0.7s' }} />
+                      <div className="fnSmoke" style={{ left: '72%', animationDelay: '1.3s' }} />
+                    </>
+                  )}
+
+                  {/* Badge corona/medalla (joya y volcán) */}
+                  {note.medal && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginBottom: '10px', position: 'relative', zIndex: 5 }}>
+                      {v.esJoya && <span className="fnCrownL" style={{ fontSize: '16px' }}>👑</span>}
+                      <span style={{ fontSize: '24px', filter: v.esJoya ? 'drop-shadow(0 0 8px gold)' : 'drop-shadow(0 0 4px #FF6B35)', animation: 'pulse 2s ease infinite' }}>{note.medal}</span>
+                      <span style={{ fontSize: '11px', fontWeight: '700', color: v.esJoya ? '#FFD700' : '#FF6B35', letterSpacing: '1.5px' }}>
+                        {v.esJoya ? 'ESTRELLA DORADA' : 'VOLCÁN'}
+                      </span>
+                      {v.esJoya && <span className="fnCrownL" style={{ fontSize: '16px' }}>👑</span>}
+                    </div>
+                  )}
+
+                  {/* Badge esquina: EN LLAMAS (ardiendo) o tiempo (cenizas) */}
+                  {v.ardiendo && !note.medal && (
+                    <div style={{ position: 'absolute', top: '12px', right: '12px', zIndex: 10, fontSize: '10px', backgroundColor: '#FF4500', color: '#fff', padding: '3px 9px', borderRadius: '8px', fontWeight: '700', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      🔥 EN LLAMAS
+                    </div>
+                  )}
+                  {v.cenizas && (
+                    <div style={{ position: 'absolute', top: '12px', right: '12px', zIndex: 10, fontSize: '10px', backgroundColor: '#FF4500', color: '#fff', padding: '3px 9px', borderRadius: '8px', fontWeight: '700', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      💨 POR DESAPARECER
+                    </div>
+                  )}
+
+                  <p style={{ color: v.texto, fontSize: (note.medal || v.ardiendo) ? '17px' : '16px', lineHeight: '28px', fontWeight: (note.medal || v.ardiendo) ? '500' : '400', position: 'relative', zIndex: 3, margin: 0, textAlign: 'left' }}>{note.text}</p>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', position: 'relative', zIndex: 3 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '12px', color: note.medal ? '#A0AEC0' : v.cenizas ? '#FFB347' : v.ardiendo ? '#C24A1F' : '#8B7355', fontWeight: v.cenizas ? '600' : '400' }}>
+                        {note.time}{v.cenizas && ' · 💨'}
+                      </span>
+                      <span style={{ fontSize: '11px', color: note.medal ? '#A0AEC0' : v.cenizas ? '#FFD0B0' : '#A0937D', backgroundColor: note.medal ? 'rgba(255,255,255,0.1)' : v.cenizas ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)', padding: '2px 6px', borderRadius: '8px' }}>{note.dist}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', border: v.esJoya ? '1.5px solid rgba(255,215,0,0.4)' : v.ardiendo ? '1.5px solid rgba(255,69,0,0.5)' : '1.5px solid rgba(255,107,53,0.3)', borderRadius: '20px', padding: '6px 14px', backgroundColor: v.esJoya ? 'rgba(255,215,0,0.15)' : v.ardiendo ? 'rgba(255,69,0,0.15)' : 'rgba(255,107,53,0.1)' }}>
+                      <span style={{ fontSize: '16px' }}>🔥</span>
+                      <span style={{ fontWeight: '700', color: v.esJoya ? COLORS.gold : v.ardiendo ? '#FF4500' : COLORS.orange, fontSize: '15px' }}>{note.fires.toLocaleString()}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginTop: '24px' }}>
@@ -361,6 +463,47 @@ export default function LandingPage() {
         @keyframes float1 { 0%, 100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-30px) rotate(-8deg); } }
         @keyframes float2 { 0%, 100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-15px) rotate(5deg); } }
         @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
+
+        /* ===== FUEGO 2.0 (landing) ===== */
+        @keyframes infernoL {
+          0%, 100% { box-shadow: 0 0 24px rgba(255,69,0,0.55), 0 0 48px rgba(255,69,0,0.3), 0 8px 40px rgba(0,0,0,0.4); transform: rotate(-1deg) scale(1); }
+          50%      { box-shadow: 0 0 38px rgba(255,69,0,0.85), 0 0 72px rgba(255,80,0,0.45), 0 8px 40px rgba(0,0,0,0.4); transform: rotate(-1deg) scale(1.012); }
+        }
+        @keyframes dyingL {
+          0%, 100% { box-shadow: 0 0 18px rgba(120,40,10,0.5), 0 8px 40px rgba(0,0,0,0.5); }
+          50%      { box-shadow: 0 0 28px rgba(160,60,15,0.65), 0 8px 40px rgba(0,0,0,0.5); }
+        }
+        @keyframes jewelL {
+          0%, 100% { box-shadow: 0 0 20px rgba(255,215,0,0.5), 0 0 42px rgba(255,215,0,0.22), 0 8px 40px rgba(0,0,0,0.5); }
+          50%      { box-shadow: 0 0 30px rgba(255,215,0,0.75), 0 0 64px rgba(255,215,0,0.35), 0 8px 40px rgba(0,0,0,0.5); }
+        }
+        @keyframes flameDanceL {
+          0%   { transform: scaleY(0.85) translateX(0); opacity: .55; }
+          50%  { transform: scaleY(1.12) translateX(-1px); opacity: .9; }
+          100% { transform: scaleY(0.92) translateX(1px); opacity: .65; }
+        }
+        @keyframes smokeRiseL {
+          0%   { transform: translateY(0) scale(1); opacity: 0; }
+          25%  { opacity: .3; }
+          100% { transform: translateY(-32px) scale(1.6); opacity: 0; }
+        }
+        @keyframes crownShineL {
+          0%, 100% { filter: drop-shadow(0 0 4px rgba(255,215,0,0.6)); }
+          50%      { filter: drop-shadow(0 0 10px rgba(255,215,0,0.95)); }
+        }
+        .fnFlames {
+          clip-path: polygon(0 100%, 6% 55%, 13% 90%, 22% 40%, 31% 85%, 40% 50%, 50% 80%, 60% 45%, 70% 85%, 80% 48%, 89% 88%, 96% 58%, 100% 100%);
+          transform-origin: bottom center;
+          animation: flameDanceL 0.5s ease-in-out infinite alternate;
+          border-radius: 0 0 12px 12px;
+        }
+        .fnSmoke {
+          position: absolute; bottom: 40px; width: 9px; height: 9px; border-radius: 50%;
+          background: rgba(170,170,170,0.45); filter: blur(3px); pointer-events: none; z-index: 4;
+          animation: smokeRiseL 2.6s ease-out infinite;
+        }
+        .fnCrownL { animation: crownShineL 2s ease-in-out infinite; }
+
         @media (max-width: 768px) { .desktop-nav { display: none !important; } .mobile-menu-btn { display: block !important; } }
         @media (min-width: 769px) { .mobile-menu { display: none !important; } }
         ::selection { background: rgba(255, 107, 53, 0.3); color: white; }
