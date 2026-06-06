@@ -392,13 +392,48 @@ export default function FireApp() {
       localStorage.setItem('fire_visited', 'true');
     }
 
-    // Detectar retorno de pago exitoso de Stripe
-    const urlParams = new URLSearchParams(window.location.search);
-    const pagoStatus = urlParams.get('pago');
-    const pagoTipo = urlParams.get('tipo');
-    const pagoDeviceId = urlParams.get('device_id');
-    
-    if (pagoStatus === 'exito' && pagoTipo && pagoDeviceId) {
+   // Detectar retorno de pago exitoso de Stripe
+const urlParams = new URLSearchParams(window.location.search);
+const pagoStatus = urlParams.get('pago');
+const pagoSessionId = urlParams.get('session_id');
+
+if (pagoStatus === 'exito' && pagoSessionId) {
+  const confirmarPago = async () => {
+    try {
+      const resp = await fetch('https://xjzoabsuzbqxkriamqed.supabase.co/functions/v1/confirm-payment', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhqem9hYnN1emJxeGtyaWFtcWVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyNzYyNDcsImV4cCI6MjA5MDg1MjI0N30.gS2lG4W-f_4Vtsz7cYZK9PAX6pI8fdD0br7geqaae6E',
+        },
+        body: JSON.stringify({ session_id: pagoSessionId, device_id: id }),
+      });
+      const res = await resp.json();
+
+      await new Promise(r => setTimeout(r, 800));
+      try {
+        const { data } = await supabase.rpc('obtener_estado', { p_device_id: id, p_fingerprint: fp });
+        if (data) {
+          setPensamientosUsados(data.usados || 0);
+          setVideosVistos(data.videos || 0);
+          setTieneIlimitado(data.ilimitado || false);
+          setExtrasComprados(data.extras || 0);
+        }
+      } catch (e) {}
+
+      if (res.ok && res.notas_agregadas > 0) {
+        setMostrarMedalla({ emoji: '✅', nombre: '¡Pago exitoso! Notas agregadas' });
+      } else if (res.pending) {
+        setMostrarMedalla({ emoji: '🏪', nombre: 'Pago OXXO pendiente. Se acreditará al pagar.' });
+      }
+      setTimeout(() => setMostrarMedalla(null), 3500);
+    } catch (e) {}
+  };
+  confirmarPago();
+  window.history.replaceState({}, '', window.location.pathname);
+} else if (pagoStatus === 'cancelado') {
+  window.history.replaceState({}, '', window.location.pathname);
+}
       // Confirmar pago en el servidor y esperar a que termine
       const confirmarPago = async () => {
         try {
