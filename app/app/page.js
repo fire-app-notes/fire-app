@@ -18,6 +18,11 @@ const MAX_NOTAS_GRATIS = 3;
 const MAX_VIDEOS_DIA = 3;
 const COOLDOWN_SECONDS = 30;
 
+// [PLAY] Bandera para ocultar TODO lo de pago en la versión empaquetada de Google Play.
+// En la TWA de Play: build con NEXT_PUBLIC_ES_APP_PLAY=true  -> sin botones de compra.
+// En la web (firenotesapp.com): queda en false -> se puede comprar.
+const ES_APP_PLAY = (typeof process !== 'undefined' && process.env && process.env.NEXT_PUBLIC_ES_APP_PLAY === 'true');
+
 // Cloudflare Turnstile (CAPTCHA)
 const TURNSTILE_SITE_KEY = '0x4AAAAAAC1muhrmP2gp6FCG';
 
@@ -171,10 +176,21 @@ function calcularQuemado(createdAt, expiresAt) {
   return Math.min(Math.max(vidaTranscurrida / vidaTotal, 0), 1);
 }
 
+// EJE TIEMPO: que tan quemada esta por acercarse a las 24h (0..3 = muerte)
 function getNivelFuego(quemado) {
   if (quemado >= 0.92) return 3;
   if (quemado >= 0.75) return 2;
   if (quemado >= 0.5) return 1;
+  return 0;
+}
+
+// EJE FUEGOS: que tan incendiada esta por popularidad (0..3 = vida/gloria)
+// 10+ = chispa, 50+ = fogata, 100+ = incendio (super incendiada)
+function getNivelCalor(fires) {
+  const f = fires || 0;
+  if (f >= 100) return 3;
+  if (f >= 50) return 2;
+  if (f >= 10) return 1;
   return 0;
 }
 
@@ -273,7 +289,8 @@ export default function FireApp() {
   // Push Notifications
   const [fcmToken, setFcmToken] = useState(null);
   const firebaseMessagingRef = useRef(null);
-  
+  const swRegistrationRef = useRef(null); // [NOTIF] registro del SW de Firebase
+
   // Medal toast
   const [mostrarMedalla, setMostrarMedalla] = useState(null); // { emoji, nombre }
 
@@ -310,6 +327,32 @@ export default function FireApp() {
         return prev - 1;
       });
     }, 1000);
+  };
+
+  // ============================================================
+  // [NOTIF] PEDIR PERMISO DE NOTIFICACIONES - EN CONTEXTO (no al inicio)
+  // Se llama DESPUES de publicar la primera nota = momento de valor real.
+  // ============================================================
+  const activarNotificaciones = async () => {
+    try {
+      if (!('Notification' in window) || Notification.permission === 'denied') return;
+      const messaging = firebaseMessagingRef.current;
+      if (!messaging) return;
+      const permiso = await Notification.requestPermission();
+      if (permiso !== 'granted') return;
+      const token = await messaging.getToken({
+        vapidKey: FIREBASE_VAPID_KEY,
+        serviceWorkerRegistration: swRegistrationRef.current,
+      });
+      if (token) {
+        setFcmToken(token);
+        await supabase.from('push_tokens').upsert({
+          device_id: deviceId,
+          fcm_token: token,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'device_id' });
+      }
+    } catch (e) {}
   };
 
   // ============================================================
@@ -397,8 +440,9 @@ export default function FireApp() {
       window.history.replaceState({}, '', window.location.pathname);
     }
 
-    // Cargar Firebase para Push Notifications
-    const loadFirebase = async () => {
+    // [NOTIF] Cargar Firebase para Push Notifications — SOLO inicializa, NO pide permiso.
+    // El permiso se pide en activarNotificaciones() tras publicar la primera nota.
+    const initFirebase = async () => {
       try {
         // Cargar Firebase SDK via CDN
         if (!window.firebase) {
@@ -425,26 +469,26 @@ export default function FireApp() {
         const messaging = window.firebase.messaging();
         firebaseMessagingRef.current = messaging;
         
-        // Registrar service worker
+        // Registrar service worker (sin pedir permiso todavia)
         if ('serviceWorker' in navigator) {
-          const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-          
-          // Pedir permiso de notificaciones
-          const permission = await Notification.requestPermission();
-          if (permission === 'granted') {
-            const token = await messaging.getToken({
-              vapidKey: FIREBASE_VAPID_KEY,
-              serviceWorkerRegistration: registration,
-            });
-            if (token) {
-              setFcmToken(token);
-              // Guardar token en Supabase
-              await supabase.from('push_tokens').upsert({
-                device_id: id,
-                fcm_token: token,
-                updated_at: new Date().toISOString(),
-              }, { onConflict: 'device_id' });
-            }
+          swRegistrationRef.current = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+
+          // Si el permiso YA fue concedido en una sesion previa, recuperamos el token directo.
+          if (Notification.permission === 'granted') {
+            try {
+              const token = await messaging.getToken({
+                vapidKey: FIREBASE_VAPID_KEY,
+                serviceWorkerRegistration: swRegistrationRef.current,
+              });
+              if (token) {
+                setFcmToken(token);
+                await supabase.from('push_tokens').upsert({
+                  device_id: id,
+                  fcm_token: token,
+                  updated_at: new Date().toISOString(),
+                }, { onConflict: 'device_id' });
+              }
+            } catch (e) {}
           }
           
           // Escuchar notificaciones en primer plano
@@ -469,7 +513,7 @@ export default function FireApp() {
         // Push notifications no disponibles - no es crítico
       }
     };
-    loadFirebase();
+    initFirebase();
 
     if (navigator.geolocation) {
       setUbicacionStatus('obteniendo');
@@ -813,6 +857,13 @@ export default function FireApp() {
         ...prev,
         total_notas_publicadas: prev.total_notas_publicadas + 1
       }));
+
+      // [NOTIF] Pedir permiso de notificaciones SOLO aqui (tras publicar = momento de valor).
+      // Nunca insiste si el usuario ya dijo que no (Notification.permission === 'denied').
+      if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+        // pequeño delay para no pisar el toast de exito
+        setTimeout(() => { activarNotificaciones(); }, 1800);
+      }
       
       setMostrarExito(true);
       setTimeout(() => { setMostrarExito(false); setPantalla('feed'); }, 1500);
@@ -941,6 +992,8 @@ export default function FireApp() {
   };
 
   const comprar = async (tipo) => {
+    // [PLAY] En la app de Google Play no se permite checkout dentro de la app.
+    if (ES_APP_PLAY) return;
     try {
       setError('');
       const response = await fetch('https://xjzoabsuzbqxkriamqed.supabase.co/functions/v1/create-checkout', {
@@ -1003,6 +1056,255 @@ export default function FireApp() {
     } catch (e) {
       alert('Error al reportar. Intenta de nuevo.');
     }
+  };
+
+  // ============================================================
+  // [FUEGO 2.0] RENDER DE UNA NOTA — feed + misnotas en una sola funcion.
+  // Dos ejes visuales separados:
+  //   TIEMPO (quemado)  -> la nota se carboniza y muere (cenizas, humo, bordes negros)
+  //   FUEGOS (calor)    -> la nota arde viva y brillante (super incendiada a 100+)
+  //   TOP de la zona    -> la JOYA dorada (override, corona, glow oro)
+  // ============================================================
+  const renderNota = (nota, { esTop = false, modo = 'feed' }) => {
+    const quemado = calcularQuemado(nota.created_at, nota.expires_at);
+    const nivelTiempo = getNivelFuego(quemado);    // 0..3 muerte por tiempo
+    const nivelCalor = getNivelCalor(nota.fires);  // 0..3 vida por fuegos
+    const esJoya = !!esTop;
+    const esMia = nota.device_id === deviceId;
+    const tieneReaccion = misReacciones.has(nota.id);
+
+    const ardePorCalor = nivelCalor >= 2;      // 50+ fuegos
+    const superIncendiada = nivelCalor >= 3;   // 100+ fuegos
+    const ardePorTiempo = nivelTiempo >= 2;    // ultimas horas de vida
+    const cenizas = nivelTiempo >= 3;          // casi muerta -> papel carbonizado
+    const hayLlamas = (ardePorCalor || ardePorTiempo) && !esJoya;
+    const hayHumo = cenizas && !esJoya;
+
+    // ---- Fondo del papel + color de texto ----
+    let fondo = {};
+    let colorTexto = COLORS.noteText;
+    if (esJoya) {
+      fondo = {
+        backgroundColor: '#2D1B4E',
+        background: 'linear-gradient(135deg, #2D1B4E 0%, #1A1A2E 50%, #2D1B4E 100%)',
+      };
+      colorTexto = '#FFFFFF';
+    } else if (cenizas) {
+      // papel quemado tipo carbon
+      fondo = { background: 'radial-gradient(130% 95% at 50% 120%, #1c0d05, #3a1a08 32%, #5a2e12 62%, #6b3a18 88%)' };
+      colorTexto = '#FFE8D6';
+    }
+
+    // ---- Borde ----
+    let borde;
+    if (esJoya) borde = '2px solid #FFD700';
+    else if (superIncendiada) borde = '2px solid #FF4500';   // popular = rojo vivo
+    else if (cenizas) borde = '2px solid #7a3b15';           // muriendo = cafe quemado
+    else if (ardePorTiempo) borde = '2px solid #FF6B35';
+    else if (nivelCalor === 2) borde = '1.5px solid #FF6B35';
+    else if (modo === 'misnotas') borde = `2px solid ${COLORS.purple}40`;
+    else borde = 'none';
+
+    // ---- Animacion / glow ----
+    let animation = 'none';
+    if (esJoya) animation = 'jewel 2.6s ease-in-out infinite';
+    else if (superIncendiada) animation = 'inferno 0.9s ease-in-out infinite';
+    else if (cenizas) animation = 'dying 1.8s ease-in-out infinite';
+    else if (nivelCalor >= 1 || ardePorTiempo) animation = 'ember 1.8s ease-in-out infinite';
+
+    const opacity = esJoya ? 1 : cenizas ? 0.92 : 1;
+
+    // ---- Llamas (clip-path) altura/color segun fuente dominante ----
+    let flamesStyle = null;
+    if (hayLlamas) {
+      let altura, grad, op;
+      if (superIncendiada) {            // popular: alta, brillante, naranja-dorado
+        altura = 46; grad = 'linear-gradient(to top, #FFD000, #FF4500 42%, #FF6B35 72%, transparent)'; op = 0.82;
+      } else if (cenizas) {             // muriendo: roja-cobre, se apaga
+        altura = 42; grad = 'linear-gradient(to top, #FF5500, #C9450F 45%, #8a3a18 78%, transparent)'; op = 0.7;
+      } else {                          // intermedio
+        altura = 28; grad = 'linear-gradient(to top, #FF4500, #FF6B35 55%, transparent)'; op = 0.58;
+      }
+      flamesStyle = {
+        position: 'absolute', left: 0, right: 0, bottom: 0,
+        height: altura + 'px', background: grad, opacity: op, zIndex: 2,
+        pointerEvents: 'none',
+      };
+    }
+
+    // ---- Estilo final de la tarjeta ----
+    const cardStyle = {
+      ...S.nota,
+      ...fondo,
+      opacity,
+      border: borde,
+      animation,
+      boxShadow: esJoya
+        ? undefined
+        : superIncendiada
+          ? undefined
+          : cenizas
+            ? undefined
+            : (nivelCalor >= 1 || ardePorTiempo)
+              ? undefined
+              : '0 2px 12px rgba(0,0,0,0.3)',
+    };
+
+    // ---- Footer segun modo ----
+    const footer = modo === 'misnotas' ? (
+      <div style={S.notaFooter}>
+        <div style={S.notaMetaCol}>
+          <span style={{ ...S.notaTiempo, color: cenizas ? '#FFB347' : ardePorTiempo ? '#FF6B35' : '#8B7355' }}>
+            {timeAgo(nota.created_at)}
+          </span>
+          <span style={{
+            ...S.notaExpira,
+            color: cenizas ? '#FFB347' : ardePorTiempo ? '#FF6B35' : COLORS.gray,
+            fontWeight: ardePorTiempo ? '600' : '400',
+          }}>
+            ⏱ {tiempoRestante(nota.expires_at)} {ardePorTiempo && '💨'}
+          </span>
+        </div>
+        <div style={{
+          ...S.fireCount,
+          backgroundColor: nivelCalor >= 1 ? 'rgba(255,107,53,0.15)' : 'rgba(0,0,0,0.03)',
+          borderColor: superIncendiada ? '#FF4500' : nivelCalor >= 1 ? COLORS.orange : 'transparent',
+        }}>
+          <span style={{ fontSize: nivelCalor >= 1 ? '22px' : '18px' }}>🔥</span>
+          <span style={{
+            fontSize: '18px', fontWeight: 'bold',
+            color: superIncendiada ? '#FF4500' : nivelCalor >= 1 ? COLORS.orange : (cenizas ? '#FFD700' : COLORS.noteText),
+          }}>
+            {(nota.fires || 0).toLocaleString()}
+          </span>
+        </div>
+      </div>
+    ) : (
+      <div style={S.notaFooter}>
+        <div style={S.notaMeta}>
+          <span style={{
+            ...S.notaTiempo,
+            color: esJoya ? '#FFD700' : cenizas ? '#FFB347' : ardePorTiempo ? '#FF6B35' : '#8B7355',
+            fontWeight: (ardePorTiempo || esJoya) ? '600' : '500',
+          }}>
+            {timeAgo(nota.created_at)}
+            {ardePorTiempo && ` · ${tiempoRestanteCorto(nota.expires_at)} 💨`}
+          </span>
+          <span style={{
+            ...S.notaDistancia,
+            ...(esJoya ? { color: '#A0AEC0', backgroundColor: 'rgba(255,255,255,0.1)' } : {}),
+            ...(cenizas ? { color: '#FFD0B0', backgroundColor: 'rgba(255,255,255,0.08)' } : {}),
+          }}>{nota.distanciaMetros}m</span>
+        </div>
+        <div style={S.notaActions}>
+          <button onClick={() => setMostrarReporte(nota.id)} style={{
+            ...S.reportBtn,
+            ...((esJoya || cenizas) ? { color: '#C9B8A8' } : {}),
+          }}>
+            ⚑
+          </button>
+          <button 
+            onClick={() => hacerFire(nota.id)} 
+            style={{
+              ...S.fireBtn,
+              backgroundColor: tieneReaccion ? 'rgba(255,107,53,0.3)' : esJoya ? 'rgba(255,215,0,0.15)' : superIncendiada ? 'rgba(255,69,0,0.18)' : 'transparent',
+              borderColor: tieneReaccion ? COLORS.orange : esJoya ? '#FFD700' : superIncendiada ? '#FF4500' : (cenizas ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.1)'),
+            }}
+          >
+            <span style={{ fontSize: '16px' }}>🔥</span>
+            <span style={{ 
+              fontWeight: '600',
+              color: tieneReaccion ? COLORS.orange : esJoya ? '#FFD700' : superIncendiada ? '#FF4500' : (cenizas ? '#FFE8D6' : COLORS.noteText),
+            }}>
+              {nota.fires}
+            </span>
+          </button>
+        </div>
+      </div>
+    );
+
+    return (
+      <div key={nota.id} style={cardStyle}>
+        {/* Líneas de cuaderno (solo papel claro, no joya ni cenizas) */}
+        {!esJoya && !cenizas && <div style={S.notaLines} />}
+
+        {/* Carbonizado de orillas por TIEMPO (independiente de fuegos) */}
+        {ardePorTiempo && !esJoya && (
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none',
+            background: cenizas
+              ? 'radial-gradient(circle at 100% 0%, rgba(0,0,0,0.55), transparent 34%), radial-gradient(circle at 0% 0%, rgba(0,0,0,0.5), transparent 32%), radial-gradient(circle at 100% 100%, rgba(0,0,0,0.45), transparent 30%), radial-gradient(circle at 0% 100%, rgba(0,0,0,0.4), transparent 28%)'
+              : 'radial-gradient(circle at 100% 100%, rgba(60,20,5,0.32), transparent 40%), radial-gradient(circle at 0% 100%, rgba(60,20,5,0.28), transparent 38%)',
+          }} />
+        )}
+
+        {/* Llamas lamiendo desde abajo */}
+        {flamesStyle && <div className="fnFlames" style={flamesStyle} />}
+
+        {/* Humo cuando es cenizas */}
+        {hayHumo && (
+          <>
+            <div className="fnSmoke" style={{ left: '30%', animationDelay: '0s' }} />
+            <div className="fnSmoke" style={{ left: '55%', animationDelay: '0.7s' }} />
+            <div className="fnSmoke" style={{ left: '72%', animationDelay: '1.3s' }} />
+          </>
+        )}
+
+        {/* Badge corona TOP / joya */}
+        {esJoya && (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+            marginBottom: '10px', position: 'relative', zIndex: 5,
+          }}>
+            <span className="fnCrown" style={{ fontSize: '20px' }}>👑</span>
+            <span style={{ fontSize: '13px', fontWeight: '700', color: '#FFD700', letterSpacing: '2px' }}>
+              TOP 1
+            </span>
+            <span className="fnCrown" style={{ fontSize: '20px' }}>👑</span>
+          </div>
+        )}
+
+        {/* Badge "Tu nota" */}
+        {modo === 'feed' && esMia && <div style={S.tuNotaBadgeFeed}>Tu nota</div>}
+        {modo === 'misnotas' && <div style={S.tuNotaBadge}>Tu nota</div>}
+
+        {/* Badge esquina: tiempo restante (prioridad) o EN LLAMAS por popularidad */}
+        {ardePorTiempo && (
+          <div style={{
+            position: 'absolute',
+            top: '8px', ...(modo === 'misnotas' ? { left: '8px' } : { right: '8px' }),
+            fontSize: '11px',
+            backgroundColor: cenizas ? '#FF4500' : '#FF6B35',
+            color: '#fff', padding: '2px 8px', borderRadius: '8px',
+            fontWeight: '600', zIndex: 10,
+            display: 'flex', alignItems: 'center', gap: '4px',
+          }}>
+            {cenizas ? '🔥' : '⏱'} {tiempoRestanteCorto(nota.expires_at)}
+          </div>
+        )}
+        {!ardePorTiempo && superIncendiada && !esJoya && modo === 'feed' && (
+          <div style={{
+            position: 'absolute', top: '8px', right: '8px',
+            fontSize: '10px', backgroundColor: '#FF4500', color: '#fff',
+            padding: '2px 8px', borderRadius: '8px', fontWeight: '700',
+            letterSpacing: '0.5px', zIndex: 10,
+            display: 'flex', alignItems: 'center', gap: '4px',
+          }}>
+            🔥 EN LLAMAS
+          </div>
+        )}
+
+        {/* Texto de la nota */}
+        <p style={{
+          ...S.notaTexto,
+          color: colorTexto,
+          ...(esJoya ? { fontSize: '16px', fontWeight: '500' } : {}),
+          zIndex: 3,
+        }}>{nota.texto}</p>
+
+        {footer}
+      </div>
+    );
   };
 
   // ============================================================
@@ -1294,151 +1596,16 @@ export default function FireApp() {
           ) : (
             <div style={S.notasGrid}>
               {(() => {
-                // Nota con más fuegos va primero con corona
+                // Nota con más fuegos va primero = la JOYA (corona)
                 const topNota = notas.filter(n => n.fires > 0).sort((a, b) => b.fires - a.fires)[0];
                 const resto = topNota 
-                  ? notas.filter(n => n.id !== topNota.id) // Las demás en orden original (más nuevas primero)
+                  ? notas.filter(n => n.id !== topNota.id)
                   : notas;
                 const ordenadas = topNota ? [topNota, ...resto] : resto;
                 
                 return ordenadas.map((nota) => {
-                const esTop = topNota && nota.id === topNota.id;
-                const quemado = calcularQuemado(nota.created_at, nota.expires_at);
-                const nivelFuego = getNivelFuego(quemado);
-                const estaArdiendo = nota.fires >= 10;
-                const tieneReaccion = misReacciones.has(nota.id);
-                const esMia = nota.device_id === deviceId;
-                
-                const estiloQuemado = {
-                  opacity: nivelFuego >= 3 ? 0.85 : nivelFuego >= 2 ? 0.9 : 1 - (quemado * 0.15),
-                  boxShadow: esTop
-                    ? '0 0 20px rgba(255, 215, 0, 0.4), 0 0 40px rgba(255, 215, 0, 0.2), 0 4px 24px rgba(0,0,0,0.5)'
-                    : nivelFuego >= 2 
-                      ? '0 0 20px rgba(255, 107, 53, 0.5), 0 0 40px rgba(255, 69, 0, 0.3)'
-                      : estaArdiendo 
-                        ? '0 4px 20px rgba(255, 107, 53, 0.3)'
-                        : '0 2px 12px rgba(0,0,0,0.3)',
-                  border: esTop 
-                    ? '2px solid #FFD700'
-                    : nivelFuego >= 2 ? '2px solid #FF6B35' : 'none',
-                  animation: nivelFuego >= 3 ? 'burning 1.5s ease-in-out infinite' : esTop ? 'glow 2s ease-in-out infinite' : 'none',
-                  // TOP 1: fondo morado oscuro premium
-                  ...(esTop ? {
-                    backgroundColor: '#2D1B4E',
-                    background: 'linear-gradient(135deg, #2D1B4E 0%, #1A1A2E 50%, #2D1B4E 100%)',
-                  } : {}),
-                };
-                
-                return (
-                  <div key={nota.id} style={{
-                    ...S.nota,
-                    ...estiloQuemado,
-                  }}>
-                    {/* Líneas de cuaderno solo en notas normales */}
-                    {!esTop && <div style={S.notaLines} />}
-                    
-                    {/* Efecto quemándose - borde inferior con gradiente */}
-                    {nivelFuego >= 2 && (
-                      <div style={{
-                        position: 'absolute',
-                        bottom: 0, left: 0, right: 0,
-                        height: nivelFuego >= 3 ? '40px' : '24px',
-                        background: nivelFuego >= 3 
-                          ? 'linear-gradient(to top, rgba(255,69,0,0.4), rgba(255,107,53,0.15), transparent)'
-                          : 'linear-gradient(to top, rgba(255,107,53,0.2), transparent)',
-                        borderRadius: '0 0 8px 8px',
-                        pointerEvents: 'none',
-                        zIndex: 2,
-                      }} />
-                    )}
-                    
-                    {/* Indicador de tiempo restante para notas que se queman */}
-                    {nivelFuego >= 2 && (
-                      <div style={{
-                        position: 'absolute',
-                        top: '8px', right: '8px',
-                        fontSize: '11px',
-                        backgroundColor: nivelFuego >= 3 ? '#FF4500' : '#FF6B35',
-                        color: '#fff',
-                        padding: '2px 8px',
-                        borderRadius: '8px',
-                        fontWeight: '600',
-                        zIndex: 10,
-                        display: 'flex', alignItems: 'center', gap: '4px',
-                      }}>
-                        {nivelFuego >= 3 ? '🔥' : '⏱'} {tiempoRestanteCorto(nota.expires_at)}
-                      </div>
-                    )}
-                    
-                    {/* Badge Top 1 - DENTRO de la nota */}
-                    {esTop && (
-                      <div style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-                        marginBottom: '10px',
-                        position: 'relative', zIndex: 5,
-                      }}>
-                        <span style={{ fontSize: '20px' }}>👑</span>
-                        <span style={{
-                          fontSize: '13px', fontWeight: '700', color: '#FFD700',
-                          letterSpacing: '2px',
-                        }}>
-                          TOP 1
-                        </span>
-                        <span style={{ fontSize: '20px' }}>👑</span>
-                      </div>
-                    )}
-                    
-                    {esMia && <div style={S.tuNotaBadgeFeed}>Tu nota</div>}
-                    
-                    {estaArdiendo && !esTop && nivelFuego < 2 && <div style={S.notaHot}>🔥</div>}
-                    
-                    <p style={{
-                      ...S.notaTexto,
-                      ...(esTop ? { color: '#FFFFFF', fontSize: '16px', fontWeight: '500' } : {}),
-                    }}>{nota.texto}</p>
-                    
-                    <div style={S.notaFooter}>
-                      <div style={S.notaMeta}>
-                        <span style={{
-                          ...S.notaTiempo,
-                          color: esTop ? '#FFD700' : nivelFuego >= 2 ? '#FF6B35' : '#8B7355',
-                          fontWeight: nivelFuego >= 2 || esTop ? '600' : '500',
-                        }}>
-                          {timeAgo(nota.created_at)}
-                          {nivelFuego >= 2 && ` · ${tiempoRestanteCorto(nota.expires_at)} 💨`}
-                        </span>
-                        <span style={{
-                          ...S.notaDistancia,
-                          ...(esTop ? { color: '#A0AEC0', backgroundColor: 'rgba(255,255,255,0.1)' } : {}),
-                        }}>{nota.distanciaMetros}m</span>
-                      </div>
-                      <div style={S.notaActions}>
-                        <button onClick={() => setMostrarReporte(nota.id)} style={{
-                          ...S.reportBtn,
-                          ...(esTop ? { color: '#A0AEC0' } : {}),
-                        }}>
-                          ⚑
-                        </button>
-                        <button 
-                          onClick={() => hacerFire(nota.id)} 
-                          style={{
-                            ...S.fireBtn,
-                            backgroundColor: tieneReaccion ? 'rgba(255,107,53,0.3)' : esTop ? 'rgba(255,215,0,0.15)' : 'transparent',
-                            borderColor: tieneReaccion ? COLORS.orange : esTop ? '#FFD700' : 'rgba(0,0,0,0.1)',
-                          }}
-                        >
-                          <span style={{ fontSize: '16px' }}>🔥</span>
-                          <span style={{ 
-                            fontWeight: '600',
-                            color: tieneReaccion ? COLORS.orange : esTop ? '#FFD700' : COLORS.noteText,
-                          }}>
-                            {nota.fires}
-                          </span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
+                  const esTop = !!(topNota && nota.id === topNota.id);
+                  return renderNota(nota, { esTop, modo: 'feed' });
                 });
               })()}
             </div>
@@ -1575,7 +1742,7 @@ export default function FireApp() {
             )}
           </div>
           
-          {/* TOP 5 EN EL MAPA */}
+          {/* TOP 10 EN EL MAPA */}
           {notas.some(n => n.fires >= 1) && (
             <div style={{
               backgroundColor: COLORS.bgSecondary,
@@ -1665,98 +1832,7 @@ export default function FireApp() {
             </div>
           ) : (
             <div style={S.notasGrid}>
-              {misNotas.map((nota) => {
-                const quemado = calcularQuemado(nota.created_at, nota.expires_at);
-                const nivelFuego = getNivelFuego(quemado);
-                const estaArdiendo = nota.fires >= 10;
-                
-                const estiloQuemado = {
-                  opacity: nivelFuego >= 3 ? 0.85 : nivelFuego >= 2 ? 0.9 : 1,
-                  boxShadow: nivelFuego >= 2 
-                    ? '0 0 20px rgba(255, 107, 53, 0.5), 0 0 40px rgba(255, 69, 0, 0.3)'
-                    : estaArdiendo 
-                      ? '0 4px 20px rgba(255, 107, 53, 0.3)'
-                      : '0 2px 12px rgba(0,0,0,0.3)',
-                  border: nivelFuego >= 2 ? '2px solid #FF6B35' : `2px solid ${COLORS.purple}40`,
-                  animation: nivelFuego >= 3 ? 'burning 1.5s ease-in-out infinite' : 'none',
-                };
-                
-                return (
-                  <div key={nota.id} style={{
-                    ...S.nota,
-                    ...estiloQuemado,
-                  }}>
-                    <div style={S.notaLines} />
-                    
-                    {/* Efecto quemándose - gradiente inferior */}
-                    {nivelFuego >= 2 && (
-                      <div style={{
-                        position: 'absolute',
-                        bottom: 0, left: 0, right: 0,
-                        height: nivelFuego >= 3 ? '40px' : '24px',
-                        background: nivelFuego >= 3 
-                          ? 'linear-gradient(to top, rgba(255,69,0,0.4), rgba(255,107,53,0.15), transparent)'
-                          : 'linear-gradient(to top, rgba(255,107,53,0.2), transparent)',
-                        borderRadius: '0 0 8px 8px',
-                        pointerEvents: 'none',
-                        zIndex: 2,
-                      }} />
-                    )}
-                    
-                    {/* Tiempo restante para notas que se queman */}
-                    {nivelFuego >= 2 && (
-                      <div style={{
-                        position: 'absolute',
-                        top: '8px', left: '8px',
-                        fontSize: '11px',
-                        backgroundColor: nivelFuego >= 3 ? '#FF4500' : '#FF6B35',
-                        color: '#fff',
-                        padding: '2px 8px',
-                        borderRadius: '8px',
-                        fontWeight: '600',
-                        zIndex: 10,
-                        display: 'flex', alignItems: 'center', gap: '4px',
-                      }}>
-                        {nivelFuego >= 3 ? '🔥' : '⏱'} {tiempoRestanteCorto(nota.expires_at)}
-                      </div>
-                    )}
-                    
-                    <div style={S.tuNotaBadge}>Tu nota</div>
-                    <p style={S.notaTexto}>{nota.texto}</p>
-                    <div style={S.notaFooter}>
-                      <div style={S.notaMetaCol}>
-                        <span style={{
-                          ...S.notaTiempo,
-                          color: nivelFuego >= 2 ? '#FF6B35' : '#8B7355',
-                        }}>
-                          {timeAgo(nota.created_at)}
-                        </span>
-                        <span style={{
-                          ...S.notaExpira,
-                          color: nivelFuego >= 2 ? '#FF6B35' : COLORS.gray,
-                          fontWeight: nivelFuego >= 2 ? '600' : '400',
-                        }}>
-                          ⏱ {tiempoRestante(nota.expires_at)} {nivelFuego >= 2 && '💨'}
-                        </span>
-                      </div>
-                      <div style={{
-                        ...S.fireCount,
-                        backgroundColor: estaArdiendo ? 'rgba(255,107,53,0.15)' : 'rgba(0,0,0,0.03)',
-                        borderColor: estaArdiendo ? COLORS.orange : 'transparent',
-                      }}>
-                        <span style={{ fontSize: estaArdiendo ? '22px' : '18px' }}>🔥</span>
-                        <span style={{ 
-                          fontSize: '18px', 
-                          fontWeight: 'bold',
-                          color: estaArdiendo ? COLORS.orange : COLORS.noteText,
-                        }}>
-                          {nota.fires}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              {misNotas.map((nota) => renderNota(nota, { esTop: false, modo: 'misnotas' }))}
             </div>
           )}
         </main>
@@ -1913,28 +1989,57 @@ export default function FireApp() {
         <div style={S.overlay} onClick={() => setMostrarModal(false)}>
           <div style={S.modal} onClick={(e) => e.stopPropagation()}>
             <h2 style={S.modalTitle}>Se acabaron tus notas 🔥</h2>
-            <p style={S.modalSub}>Consigue más para seguir soltando:</p>
 
-            <button onClick={() => comprar('extra3')} style={S.modalOpt}>
-              <span style={S.modalOptIcon}>🔥</span>
-              <div>
-                <strong>+3 pensamientos</strong>
-                <p style={S.modalOptDesc}>$10 MXN <span style={{ color: COLORS.gray, fontSize: '11px' }}>≈ $0.60 USD</span></p>
-              </div>
-            </button>
+            {ES_APP_PLAY ? (
+              /* [PLAY] En la app de Google Play NO se vende dentro de la app. Solo video. */
+              <>
+                <p style={S.modalSub}>Mira un video corto y consigue una nota más:</p>
+                <button onClick={verVideo} style={{...S.modalOpt, justifyContent: 'center'}}>
+                  <span style={S.modalOptIcon}>🎬</span>
+                  <div>
+                    <strong>Ver video (+1 nota)</strong>
+                    <p style={S.modalOptDesc}>Gratis · hasta {MAX_VIDEOS_DIA} al día</p>
+                  </div>
+                </button>
+                <p style={{ fontSize: '11px', color: COLORS.gray, textAlign: 'center', marginTop: '8px' }}>
+                  Tus notas gratis se recargan cada 24h.
+                </p>
+              </>
+            ) : (
+              /* WEB (firenotesapp.com): video gratis + packs de pago */
+              <>
+                <p style={S.modalSub}>Consigue más para seguir soltando:</p>
 
-           <button onClick={() => comprar('extra10')} style={{...S.modalOpt, border: `2px solid ${COLORS.gold}`}}>
-              <span style={S.modalOptIcon}>⭐</span>
-              <div>
-                <strong>+10 pensamientos</strong>
-                <p style={{...S.modalOptDesc, color: COLORS.gold}}>$25 MXN <span style={{ fontSize: '11px', opacity: 0.8 }}>≈ $1.50 USD</span> · Mejor valor</p>
-              </div>
-            </button>
+                <button onClick={verVideo} style={S.modalOpt}>
+                  <span style={S.modalOptIcon}>🎬</span>
+                  <div>
+                    <strong>Ver video (+1 nota)</strong>
+                    <p style={S.modalOptDesc}>Gratis · hasta {MAX_VIDEOS_DIA} al día</p>
+                  </div>
+                </button>
 
-            <div style={{ textAlign: 'center', padding: '12px', marginBottom: '8px' }}>
-              <p style={{ fontSize: '12px', color: COLORS.gray, marginBottom: '6px' }}>Aceptamos</p>
-              <p style={{ fontSize: '13px', color: COLORS.grayLight, fontWeight: '500' }}>💳 Tarjetas  ·  🏪 OXXO</p>
-            </div>
+                <button onClick={() => comprar('extra3')} style={S.modalOpt}>
+                  <span style={S.modalOptIcon}>🔥</span>
+                  <div>
+                    <strong>+3 pensamientos</strong>
+                    <p style={S.modalOptDesc}>$10 MXN <span style={{ color: COLORS.gray, fontSize: '11px' }}>≈ $0.60 USD</span></p>
+                  </div>
+                </button>
+
+                <button onClick={() => comprar('extra10')} style={{...S.modalOpt, border: `2px solid ${COLORS.gold}`}}>
+                  <span style={S.modalOptIcon}>⭐</span>
+                  <div>
+                    <strong>+10 pensamientos</strong>
+                    <p style={{...S.modalOptDesc, color: COLORS.gold}}>$25 MXN <span style={{ fontSize: '11px', opacity: 0.8 }}>≈ $1.50 USD</span> · Mejor valor</p>
+                  </div>
+                </button>
+
+                <div style={{ textAlign: 'center', padding: '12px', marginBottom: '8px' }}>
+                  <p style={{ fontSize: '12px', color: COLORS.gray, marginBottom: '6px' }}>Aceptamos</p>
+                  <p style={{ fontSize: '13px', color: COLORS.grayLight, fontWeight: '500' }}>💳 Tarjetas  ·  🏪 OXXO</p>
+                </div>
+              </>
+            )}
 
             <button onClick={() => setMostrarModal(false)} style={S.btnTerciario}>
               Cerrar
@@ -2034,7 +2139,7 @@ export default function FireApp() {
                 </p>
               </div>
               
-              <p style={S.termsUpdate}>Última actualización: Abril 2026</p>
+              <p style={S.termsUpdate}>Última actualización: Junio 2026</p>
             </div>
 
             <button onClick={() => setMostrarInfo(false)} style={S.btnPrimario}>
@@ -2078,18 +2183,74 @@ export default function FireApp() {
           0%, 100% { box-shadow: 0 0 20px rgba(155, 89, 182, 0.3); }
           50% { box-shadow: 0 0 30px rgba(155, 89, 182, 0.5); }
         }
-        
-        @keyframes burning {
-          0%, 100% { 
-            box-shadow: 0 0 20px rgba(255, 107, 53, 0.5), 0 0 40px rgba(255, 69, 0, 0.3);
-            transform: scale(1);
-          }
-          50% { 
-            box-shadow: 0 0 30px rgba(255, 107, 53, 0.7), 0 0 60px rgba(255, 69, 0, 0.5);
-            transform: scale(1.01);
-          }
+
+        /* ===== FUEGO 2.0 ===== */
+
+        /* Calor por fuegos (Chispa/Fogata): brillo naranja vivo */
+        @keyframes ember {
+          0%, 100% { box-shadow: 0 0 16px rgba(255,107,53,0.45), 0 4px 18px rgba(0,0,0,0.4); }
+          50%      { box-shadow: 0 0 26px rgba(255,107,53,0.7), 0 4px 18px rgba(0,0,0,0.4); }
         }
-        
+
+        /* Super incendiada (100+ fuegos): roja, viva, pulso rapido */
+        @keyframes inferno {
+          0%, 100% { box-shadow: 0 0 24px rgba(255,69,0,0.7), 0 0 48px rgba(255,69,0,0.4); transform: scale(1); }
+          50%      { box-shadow: 0 0 38px rgba(255,69,0,0.95), 0 0 72px rgba(255,80,0,0.55); transform: scale(1.012); }
+        }
+
+        /* Muriendo por tiempo (cenizas): brasa cafe que se apaga */
+        @keyframes dying {
+          0%, 100% { box-shadow: 0 0 18px rgba(120,40,10,0.5), 0 4px 18px rgba(0,0,0,0.5); }
+          50%      { box-shadow: 0 0 26px rgba(160,60,15,0.6), 0 4px 18px rgba(0,0,0,0.5); }
+        }
+
+        /* La joya (TOP de la zona): glow dorado premium */
+        @keyframes jewel {
+          0%, 100% { box-shadow: 0 0 20px rgba(255,215,0,0.5), 0 0 42px rgba(255,215,0,0.22), 0 4px 24px rgba(0,0,0,0.5); }
+          50%      { box-shadow: 0 0 30px rgba(255,215,0,0.75), 0 0 64px rgba(255,215,0,0.35), 0 4px 24px rgba(0,0,0,0.5); }
+        }
+
+        /* Llamas lamiendo desde abajo */
+        @keyframes flameDance {
+          0%   { transform: scaleY(0.85) translateX(0); opacity: .55; }
+          50%  { transform: scaleY(1.12) translateX(-1px); opacity: .9; }
+          100% { transform: scaleY(0.92) translateX(1px); opacity: .65; }
+        }
+
+        /* Humo ascendente (cenizas) */
+        @keyframes smokeRise {
+          0%   { transform: translateY(0) scale(1); opacity: 0; }
+          25%  { opacity: .3; }
+          100% { transform: translateY(-30px) scale(1.6); opacity: 0; }
+        }
+
+        /* Brillo de la corona */
+        @keyframes crownShine {
+          0%, 100% { filter: drop-shadow(0 0 4px rgba(255,215,0,0.6)); }
+          50%      { filter: drop-shadow(0 0 10px rgba(255,215,0,0.95)); }
+        }
+
+        .fnFlames {
+          clip-path: polygon(0 100%, 6% 55%, 13% 90%, 22% 40%, 31% 85%, 40% 50%, 50% 80%, 60% 45%, 70% 85%, 80% 48%, 89% 88%, 96% 58%, 100% 100%);
+          transform-origin: bottom center;
+          animation: flameDance 0.5s ease-in-out infinite alternate;
+          border-radius: 0 0 8px 8px;
+        }
+
+        .fnSmoke {
+          position: absolute;
+          bottom: 34px;
+          width: 9px; height: 9px;
+          border-radius: 50%;
+          background: rgba(170,170,170,0.45);
+          filter: blur(3px);
+          pointer-events: none;
+          z-index: 3;
+          animation: smokeRise 2.4s ease-out infinite;
+        }
+
+        .fnCrown { animation: crownShine 2s ease-in-out infinite; }
+
         @keyframes flicker {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.85; }
@@ -2207,7 +2368,7 @@ const S = {
   notaHot: { position: 'absolute', top: '8px', right: '8px', fontSize: '20px', animation: 'pulse 1s ease infinite' },
   tuNotaBadge: {
     position: 'absolute', top: '8px', right: '8px', backgroundColor: COLORS.purple,
-    color: COLORS.white, fontSize: '10px', fontWeight: '600', padding: '3px 10px', borderRadius: '12px',
+    color: COLORS.white, fontSize: '10px', fontWeight: '600', padding: '3px 10px', borderRadius: '12px', zIndex: 6,
   },
   notaLines: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
@@ -2217,11 +2378,11 @@ const S = {
   notaTexto: {
     color: COLORS.noteText, fontSize: '15px', lineHeight: '1.6',
     fontFamily: "'Space Grotesk', sans-serif", position: 'relative',
-    zIndex: 1, margin: 0, wordBreak: 'break-word',
+    zIndex: 3, margin: 0, wordBreak: 'break-word',
   },
   notaFooter: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    marginTop: '14px', position: 'relative', zIndex: 1,
+    marginTop: '14px', position: 'relative', zIndex: 3,
   },
   notaMeta: { display: 'flex', alignItems: 'center', gap: '8px' },
   notaMetaCol: { display: 'flex', flexDirection: 'column', gap: '2px' },
@@ -2385,7 +2546,7 @@ const S = {
   },
   tuNotaBadgeFeed: {
     position: 'absolute', top: '8px', right: '8px', backgroundColor: COLORS.purple,
-    color: COLORS.white, fontSize: '10px', fontWeight: '600', padding: '3px 8px', borderRadius: '8px', zIndex: 5,
+    color: COLORS.white, fontSize: '10px', fontWeight: '600', padding: '3px 8px', borderRadius: '8px', zIndex: 6,
   },
   
   mapaContainer: {
