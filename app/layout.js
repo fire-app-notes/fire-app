@@ -36,9 +36,9 @@ export const metadata = {
       {
         // Ideal: sube un og-image.png de 1200x630 a /public y cámbialo aquí a '/og-image.png'.
         // Por ahora usamos el ícono que ya existe para que el preview funcione desde hoy.
-        url: '/icon-512.png',
-        width: 512,
-        height: 512,
+        url: '/og-image.png',
+        width: 1200,
+        height: 630,
         alt: 'Fire Notes — Pensamientos anónimos cerca de ti',
       },
     ],
@@ -51,7 +51,7 @@ export const metadata = {
     creator: '@firenotesapp',
     title: 'Fire Notes 🔥 — Pensamientos anónimos cerca de ti',
     description: 'Suelta lo que piensas. Nadie sabe quién eres. A 1km de ti, 24 horas y desaparece.',
-    images: ['/icon-512.png'],
+    images: ['/og-image.png'],
   },
 };
 
