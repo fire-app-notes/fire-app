@@ -8,6 +8,39 @@ const COLORS = {
   gray: '#8892B0', grayLight: '#A0AEC0', cream: '#FDF6E3', noteText: '#2D2A26',
 };
 
+// ====== Redes sociales (se usan en el nav y el menú móvil) ======
+const socials = [
+  { label: 'TikTok', icon: 'tiktok', url: 'https://tiktok.com/@firenotesapp' },
+  { label: 'Instagram', icon: 'instagram', url: 'https://instagram.com/firenotesapp' },
+  { label: 'X', icon: 'x', url: 'https://x.com/firenotesapp' },
+];
+
+// Íconos SVG de marca (sin librerías, heredan el color del contenedor)
+function SocialIcon({ name }) {
+  if (name === 'tiktok') {
+    return (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+        <path d="M16.6 5.82a4.28 4.28 0 01-1.9-2.9h-3.06v12.2a2.6 2.6 0 11-2.6-2.6c.27 0 .53.04.78.12V9.5a5.7 5.7 0 00-.78-.06 5.66 5.66 0 105.66 5.66V9.01a6.9 6.9 0 003.9 1.2V7.15a3.8 3.8 0 01-2-.33z" />
+      </svg>
+    );
+  }
+  if (name === 'instagram') {
+    return (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2.5" y="2.5" width="19" height="19" rx="5" stroke="currentColor" strokeWidth="2" />
+        <circle cx="12" cy="12" r="4.2" stroke="currentColor" strokeWidth="2" />
+        <circle cx="17.4" cy="6.6" r="1.3" fill="currentColor" />
+      </svg>
+    );
+  }
+  // X (Twitter)
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+      <path d="M18.24 2.25h3.31l-7.23 8.26L23 21.75h-6.66l-5.21-6.82-5.97 6.82H1.85l7.73-8.84L1 2.25h6.83l4.71 6.23 5.7-6.23zm-1.16 17.52h1.83L7.08 4.13H5.12l11.96 15.64z" />
+    </svg>
+  );
+}
+
 export default function LandingPage() {
   const [scrollY, setScrollY] = useState(0);
   const [visibleSections, setVisibleSections] = useState(new Set());
@@ -103,10 +136,18 @@ export default function LandingPage() {
             <span style={{ fontSize: '20px', fontWeight: '700', color: COLORS.orange, letterSpacing: '1px' }}>FIRE</span>
             <span style={{ fontSize: '20px', fontWeight: '700', color: COLORS.white, letterSpacing: '1px' }}>NOTES</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '32px' }} className="desktop-nav">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '28px' }} className="desktop-nav">
             <a onClick={() => scrollTo('como-funciona')} style={navLinkStyle}>Cómo funciona</a>
             <a onClick={() => scrollTo('donde')} style={navLinkStyle}>Dónde usarla</a>
             <a onClick={() => scrollTo('privacidad')} style={navLinkStyle}>Privacidad</a>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {socials.map((s) => (
+                <a key={s.label} href={s.url} target="_blank" rel="noopener noreferrer" aria-label={s.label}
+                  style={{ width: '34px', height: '34px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(155,89,182,0.2)', color: COLORS.grayLight, textDecoration: 'none' }}>
+                  <SocialIcon name={s.icon} />
+                </a>
+              ))}
+            </div>
             <a href="/app" style={{ padding: '10px 24px', borderRadius: '24px', background: `linear-gradient(135deg, ${COLORS.orange}, ${COLORS.purple})`, color: COLORS.white, fontWeight: '600', fontSize: '14px', textDecoration: 'none', boxShadow: '0 4px 20px rgba(155,89,182,0.4)' }}>Abrir App</a>
           </div>
           <button onClick={() => setMenuOpen(!menuOpen)} className="mobile-menu-btn" style={{ display: 'none', background: 'transparent', border: 'none', color: COLORS.white, fontSize: '24px', cursor: 'pointer', padding: '8px' }}>
@@ -118,6 +159,14 @@ export default function LandingPage() {
             <a onClick={() => scrollTo('como-funciona')} style={{ ...navLinkStyle, fontSize: '18px' }}>Cómo funciona</a>
             <a onClick={() => scrollTo('donde')} style={{ ...navLinkStyle, fontSize: '18px' }}>Dónde usarla</a>
             <a onClick={() => scrollTo('privacidad')} style={{ ...navLinkStyle, fontSize: '18px' }}>Privacidad</a>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingTop: '4px' }}>
+              {socials.map((s) => (
+                <a key={s.label} href={s.url} target="_blank" rel="noopener noreferrer" aria-label={s.label}
+                  style={{ width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(155,89,182,0.2)', color: COLORS.grayLight, textDecoration: 'none' }}>
+                  <SocialIcon name={s.icon} />
+                </a>
+              ))}
+            </div>
             <a href="/app" style={{ padding: '14px 28px', borderRadius: '24px', textAlign: 'center', background: `linear-gradient(135deg, ${COLORS.orange}, ${COLORS.purple})`, color: COLORS.white, fontWeight: '600', fontSize: '16px', textDecoration: 'none' }}>Abrir App</a>
           </div>
         )}
