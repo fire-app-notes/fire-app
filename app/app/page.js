@@ -329,30 +329,66 @@ export default function FireApp() {
     }, 1000);
   };
 
+  // Genera el token FCM y lo guarda en Supabase. Devuelve true si lo logró.
+  const guardarToken = async (deviceIdParam) => {
+    const did = deviceIdParam || deviceId;
+    try {
+      const messaging = firebaseMessagingRef.current;
+      if (!messaging) { console.warn('[NOTIF] messaging no listo'); return false; }
+ 
+      // Asegurar que el service worker esté LISTO (resuelve la race condition)
+      let reg = swRegistrationRef.current;
+      if (!reg && 'serviceWorker' in navigator) {
+        reg = await navigator.serviceWorker.ready;
+        swRegistrationRef.current = reg;
+      }
+ 
+      const token = await messaging.getToken({
+        vapidKey: FIREBASE_VAPID_KEY,
+        serviceWorkerRegistration: reg,
+      });
+ 
+      if (!token) { console.warn('[NOTIF] getToken devolvió vacío'); return false; }
+ 
+      console.log('[NOTIF] token obtenido:', token.slice(0, 24) + '...');
+      setFcmToken(token);
+ 
+      const { error } = await supabase.from('push_tokens').upsert({
+        device_id: did,
+        fcm_token: token,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'device_id' });
+ 
+      if (error) { console.error('[NOTIF] error guardando en Supabase:', error); return false; }
+ 
+      console.log('[NOTIF] token guardado en Supabase ✅');
+      return true;
+    } catch (e) {
+      console.error('[NOTIF] guardarToken falló:', e);  // <-- el error real aparece aquí
+      return false;
+    }
+  };
+  
   // ============================================================
   // [NOTIF] PEDIR PERMISO DE NOTIFICACIONES - EN CONTEXTO (no al inicio)
   // Se llama DESPUES de publicar la primera nota = momento de valor real.
   // ============================================================
   const activarNotificaciones = async () => {
     try {
-      if (!('Notification' in window) || Notification.permission === 'denied') return;
-      const messaging = firebaseMessagingRef.current;
-      if (!messaging) return;
-      const permiso = await Notification.requestPermission();
+      if (!('Notification' in window)) { console.warn('[NOTIF] navegador sin Notification API'); return; }
+      if (Notification.permission === 'denied') { console.warn('[NOTIF] permiso denegado por el usuario'); return; }
+ 
+      const permiso = Notification.permission === 'granted'
+        ? 'granted'
+        : await Notification.requestPermission();
+ 
+      console.log('[NOTIF] permiso:', permiso);
       if (permiso !== 'granted') return;
-      const token = await messaging.getToken({
-        vapidKey: FIREBASE_VAPID_KEY,
-        serviceWorkerRegistration: swRegistrationRef.current,
-      });
-      if (token) {
-        setFcmToken(token);
-        await supabase.from('push_tokens').upsert({
-          device_id: deviceId,
-          fcm_token: token,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'device_id' });
-      }
-    } catch (e) {}
+ 
+      await guardarToken(deviceId);
+    } catch (e) {
+      console.error('[NOTIF] activarNotificaciones falló:', e);
+    }
   };
 
   // ============================================================
@@ -439,7 +475,6 @@ if (pagoStatus === 'exito' && pagoSessionId) {
     // El permiso se pide en activarNotificaciones() tras publicar la primera nota.
     const initFirebase = async () => {
       try {
-        // Cargar Firebase SDK via CDN
         if (!window.firebase) {
           await new Promise((resolve, reject) => {
             const script1 = document.createElement('script');
@@ -455,37 +490,47 @@ if (pagoStatus === 'exito' && pagoSessionId) {
             document.head.appendChild(script1);
           });
         }
-        
-        // Inicializar Firebase
+ 
         if (!window.firebase.apps?.length) {
           window.firebase.initializeApp(FIREBASE_CONFIG);
         }
-        
+ 
         const messaging = window.firebase.messaging();
         firebaseMessagingRef.current = messaging;
-        
-        // Registrar service worker (sin pedir permiso todavia)
+ 
         if ('serviceWorker' in navigator) {
+          // Registrar el SW de Firebase y GUARDAR el registro
           swRegistrationRef.current = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-
-          // Si el permiso YA fue concedido en una sesion previa, recuperamos el token directo.
+ 
+          // Si el permiso YA estaba concedido (sesión previa), recuperamos el token
           if (Notification.permission === 'granted') {
-            try {
-              const token = await messaging.getToken({
-                vapidKey: FIREBASE_VAPID_KEY,
-                serviceWorkerRegistration: swRegistrationRef.current,
-              });
-              if (token) {
-                setFcmToken(token);
-                await supabase.from('push_tokens').upsert({
-                  device_id: id,
-                  fcm_token: token,
-                  updated_at: new Date().toISOString(),
-                }, { onConflict: 'device_id' });
-              }
-            } catch (e) {}
+            await guardarToken(id); // usa el helper de abajo
           }
-          
+ 
+          // Escuchar notificaciones en primer plano
+          messaging.onMessage((payload) => {
+            const data = payload.data || {};
+            if (data.tipo === 'fire') {
+              setMostrarExito(false);
+              setTimeout(() => {
+                setMostrarMedalla({ emoji: '🔥', nombre: data.body || 'Tu nota recibió fuego!' });
+                setTimeout(() => setMostrarMedalla(null), 3000);
+              }, 100);
+            } else if (data.tipo === 'medalla') {
+              setMostrarMedalla({ emoji: data.emoji || '🏅', nombre: data.body || 'Nueva medalla!' });
+              setTimeout(() => setMostrarMedalla(null), 4000);
+            } else if (data.tipo === 'zona') {
+              setMostrarMedalla({ emoji: '👑', nombre: data.body || '¡Eres el #1 de tu zona!' });
+              setTimeout(() => setMostrarMedalla(null), 3000);
+            }
+          });
+        }
+      } catch (e) {
+        console.error('[NOTIF] initFirebase falló:', e);  // <-- ahora el error SÍ se ve
+      }
+    };
+    initFirebase();
+    
           // Escuchar notificaciones en primer plano
           messaging.onMessage((payload) => {
             const data = payload.data || {};
