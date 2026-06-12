@@ -32,7 +32,7 @@ const FIREBASE_CONFIG = {
   authDomain: "fire-notes-f161a.firebaseapp.com",
   projectId: "fire-notes-f161a",
   storageBucket: "fire-notes-f161a.firebasestorage.app",
-  messagingSenderId: "16344396623",
+  messagingSenderId: "16344396623", 
   appId: "1:16344396623:web:f8b39b7075b0202573cb3a"
 };
 const FIREBASE_VAPID_KEY = 'BK1DYJHZUlNM8Vx0Ete2aX-Dyz-9vtXcy5h7c7sa-Qq3K2MWHZ18FAzOM4jO0UEz51U2J82ytUPbaP_BFaU_GFI';
