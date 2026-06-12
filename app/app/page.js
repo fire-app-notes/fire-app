@@ -334,7 +334,7 @@ export default function FireApp() {
     const did = deviceIdParam || deviceId;
     try {
       const messaging = firebaseMessagingRef.current;
-      if (!messaging) { console.warn('[NOTIF] messaging no listo'); return false; }
+      if (!messaging) { alert('[NOTIF] messaging no listo (Firebase no cargó)'); return false; }
  
       // Asegurar que el service worker esté LISTO (resuelve la race condition)
       let reg = swRegistrationRef.current;
@@ -348,9 +348,8 @@ export default function FireApp() {
         serviceWorkerRegistration: reg,
       });
  
-      if (!token) { console.warn('[NOTIF] getToken devolvió vacío'); return false; }
+      if (!token) { alert('[NOTIF] getToken devolvió vacío (sin error pero sin token)'); return false; }
  
-      console.log('[NOTIF] token obtenido:', token.slice(0, 24) + '...');
       setFcmToken(token);
  
       const { error } = await supabase.from('push_tokens').upsert({
@@ -359,12 +358,12 @@ export default function FireApp() {
         updated_at: new Date().toISOString(),
       }, { onConflict: 'device_id' });
  
-      if (error) { console.error('[NOTIF] error guardando en Supabase:', error); return false; }
+      if (error) { alert('[NOTIF] ERROR Supabase: ' + JSON.stringify(error.message || error)); return false; }
  
-      console.log('[NOTIF] token guardado en Supabase ✅');
+      alert('[NOTIF] ✅ TOKEN GUARDADO! Empieza con: ' + token.slice(0, 20));
       return true;
     } catch (e) {
-      console.error('[NOTIF] guardarToken falló:', e);  // <-- el error real aparece aquí
+      alert('[NOTIF] getToken FALLÓ: ' + (e && e.message ? e.message : JSON.stringify(e)));
       return false;
     }
   };
@@ -382,7 +381,7 @@ export default function FireApp() {
         ? 'granted'
         : await Notification.requestPermission();
  
-      console.log('[NOTIF] permiso:', permiso);
+      alert('[NOTIF] permiso: ' + permiso);
       if (permiso !== 'granted') return;
  
       await guardarToken(deviceId);
