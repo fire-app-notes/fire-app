@@ -530,30 +530,6 @@ if (pagoStatus === 'exito' && pagoSessionId) {
       }
     };
     initFirebase();
-    
-          // Escuchar notificaciones en primer plano
-          messaging.onMessage((payload) => {
-            const data = payload.data || {};
-            if (data.tipo === 'fire') {
-              setMostrarExito(false);
-              setTimeout(() => {
-                setMostrarMedalla({ emoji: '🔥', nombre: data.body || 'Tu nota recibió fuego!' });
-                setTimeout(() => setMostrarMedalla(null), 3000);
-              }, 100);
-            } else if (data.tipo === 'medalla') {
-              setMostrarMedalla({ emoji: data.emoji || '🏅', nombre: data.body || 'Nueva medalla!' });
-              setTimeout(() => setMostrarMedalla(null), 4000);
-            } else if (data.tipo === 'zona') {
-              setMostrarMedalla({ emoji: '📍', nombre: data.body || 'Actividad cerca de ti!' });
-              setTimeout(() => setMostrarMedalla(null), 3000);
-            }
-          });
-        }
-      } catch (e) {
-        // Push notifications no disponibles - no es crítico
-      }
-    };
-    initFirebase();
 
     if (navigator.geolocation) {
       setUbicacionStatus('obteniendo');
