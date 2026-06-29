@@ -202,14 +202,23 @@ export default function LandingPage() {
           🔥 Abrir Fire Notes
         </a>
 
-        <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', position: 'relative', zIndex: 1, animation: 'heroText 1s ease-out 0.7s both' }}>
+        <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px', position: 'relative', zIndex: 1, animation: 'heroText 1s ease-out 0.7s both' }}>
+          <a href="https://play.google.com/store/apps/details?id=com.firenotesapp.twa" target="_blank" rel="noopener noreferrer"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '12px', padding: '12px 26px', borderRadius: '14px', backgroundColor: '#000', border: '1px solid rgba(255,255,255,0.25)', textDecoration: 'none', boxShadow: '0 4px 24px rgba(0,0,0,0.4)' }}>
+            <svg width="22" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M3.6 2.4 13.2 12 3.6 21.6c-.4-.2-.6-.6-.6-1.1V3.5c0-.5.2-.9.6-1.1z" fill="#00C8FF"/>
+              <path d="M16.8 8.6 13.2 12l3.6 3.4 3.9-2.2c.7-.4.7-1.4 0-1.8l-3.9-2.2z" fill="#FFD000"/>
+              <path d="M3.6 2.4c.2-.1.5-.1.8 0L17 9.2l-3.8 2.8z" fill="#00E676"/>
+              <path d="M13.2 12 17 14.8 4.4 21.6c-.3.1-.6.1-.8 0z" fill="#FF3D44"/>
+            </svg>
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontSize: '10px', color: '#fff', opacity: 0.85, letterSpacing: '1px' }}>DISPONIBLE EN</div>
+              <div style={{ fontSize: '18px', color: '#fff', fontWeight: '600', lineHeight: 1.05 }}>Google Play</div>
+            </div>
+          </a>
           <p style={{ fontSize: '13px', color: COLORS.gray }}>
-            Disponible en tu navegador. Sin descargas.
+            O úsala ahora en tu navegador. Sin descargas.
           </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '24px', backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
-            <span style={{ fontSize: '18px' }}>▶️</span>
-            <span style={{ fontSize: '13px', color: COLORS.grayLight, fontWeight: '500', letterSpacing: '0.5px' }}>PRÓXIMAMENTE EN GOOGLE PLAY</span>
-          </div>
         </div>
 
         <div style={{ position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)', animation: 'bounce 2s ease infinite', opacity: 0.4, fontSize: '24px', color: COLORS.gray }}>↓</div>
@@ -443,10 +452,25 @@ export default function LandingPage() {
           <p style={{ fontSize: '17px', color: COLORS.grayLight, marginBottom: '40px', maxWidth: '480px', margin: '0 auto 40px', lineHeight: 1.7 }}>
             Abre Fire Notes y descúbrelo. Sin registro, sin datos, 100% anónimo. Suelta lo que piensas y deja tu marca invisible.
           </p>
-          <a href="/app" style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '18px 48px', borderRadius: '28px', background: `linear-gradient(135deg, ${COLORS.orange}, ${COLORS.purple})`, color: COLORS.white, fontWeight: '700', fontSize: '20px', textDecoration: 'none', boxShadow: '0 8px 40px rgba(155,89,182,0.5)' }}>
-            🔥 Entrar ahora
-          </a>
-          <p style={{ fontSize: '13px', color: COLORS.gray, marginTop: '16px' }}>Funciona en cualquier navegador. Nada que instalar.</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', justifyContent: 'center', alignItems: 'center' }}>
+            <a href="/app" style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '18px 48px', borderRadius: '28px', background: `linear-gradient(135deg, ${COLORS.orange}, ${COLORS.purple})`, color: COLORS.white, fontWeight: '700', fontSize: '20px', textDecoration: 'none', boxShadow: '0 8px 40px rgba(155,89,182,0.5)' }}>
+              🔥 Entrar ahora
+            </a>
+            <a href="https://play.google.com/store/apps/details?id=com.firenotesapp.twa" target="_blank" rel="noopener noreferrer"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '12px', padding: '14px 28px', borderRadius: '14px', backgroundColor: '#000', border: '1px solid rgba(255,255,255,0.25)', textDecoration: 'none', boxShadow: '0 4px 24px rgba(0,0,0,0.4)' }}>
+              <svg width="22" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M3.6 2.4 13.2 12 3.6 21.6c-.4-.2-.6-.6-.6-1.1V3.5c0-.5.2-.9.6-1.1z" fill="#00C8FF"/>
+                <path d="M16.8 8.6 13.2 12l3.6 3.4 3.9-2.2c.7-.4.7-1.4 0-1.8l-3.9-2.2z" fill="#FFD000"/>
+                <path d="M3.6 2.4c.2-.1.5-.1.8 0L17 9.2l-3.8 2.8z" fill="#00E676"/>
+                <path d="M13.2 12 17 14.8 4.4 21.6c-.3.1-.6.1-.8 0z" fill="#FF3D44"/>
+              </svg>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: '10px', color: '#fff', opacity: 0.85, letterSpacing: '1px' }}>DISPONIBLE EN</div>
+                <div style={{ fontSize: '18px', color: '#fff', fontWeight: '600', lineHeight: 1.05 }}>Google Play</div>
+              </div>
+            </a>
+          </div>
+          <p style={{ fontSize: '13px', color: COLORS.gray, marginTop: '16px' }}>Descárgala en Play o úsala en el navegador. Tú eliges.</p>
         </div>
       </section>
 
