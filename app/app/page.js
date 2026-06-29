@@ -428,48 +428,8 @@ export default function FireApp() {
       localStorage.setItem('fire_visited', 'true');
     }
 
-   // Detectar retorno de pago exitoso de Stripe
-const urlParams = new URLSearchParams(window.location.search);
-const pagoStatus = urlParams.get('pago');
-const pagoSessionId = urlParams.get('session_id');
-
-if (pagoStatus === 'exito' && pagoSessionId) {
-  const confirmarPago = async () => {
-    try {
-      const resp = await fetch('https://xjzoabsuzbqxkriamqed.supabase.co/functions/v1/confirm-payment', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhqem9hYnN1emJxeGtyaWFtcWVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyNzYyNDcsImV4cCI6MjA5MDg1MjI0N30.gS2lG4W-f_4Vtsz7cYZK9PAX6pI8fdD0br7geqaae6E',
-        },
-        body: JSON.stringify({ session_id: pagoSessionId, device_id: id }),
-      });
-      const res = await resp.json();
-
-      await new Promise(r => setTimeout(r, 800));
-      try {
-        const { data } = await supabase.rpc('obtener_estado', { p_device_id: id, p_fingerprint: fp });
-        if (data) {
-          setPensamientosUsados(data.usados || 0);
-          setVideosVistos(data.videos || 0);
-          setTieneIlimitado(data.ilimitado || false);
-          setExtrasComprados(data.extras || 0);
-        }
-      } catch (e) {}
-
-      if (res.ok && res.notas_agregadas > 0) {
-        setMostrarMedalla({ emoji: '✅', nombre: '¡Pago exitoso! Notas agregadas' });
-      } else if (res.pending) {
-        setMostrarMedalla({ emoji: '🏪', nombre: 'Pago OXXO pendiente. Se acreditará al pagar.' });
-      }
-      setTimeout(() => setMostrarMedalla(null), 3500);
-    } catch (e) {}
-  };
-  confirmarPago();
-  window.history.replaceState({}, '', window.location.pathname);
-} else if (pagoStatus === 'cancelado') {
-  window.history.replaceState({}, '', window.location.pathname);
-}
+   // [BILLING] Deteccion de pago de Stripe retirada.
+    // Proximamente: confirmacion de compras via Google Play Billing.
     
     // [NOTIF] Cargar Firebase para Push Notifications — SOLO inicializa, NO pide permiso.
     // El permiso se pide en activarNotificaciones() tras publicar la primera nota.
@@ -1007,29 +967,10 @@ if (pagoStatus === 'exito' && pagoSessionId) {
     } catch (e) { setError('Error al procesar video.'); }
   };
 
+  // [BILLING] Venta de notas desactivada temporalmente.
+  // Stripe retirado (politicas de Google Play). Proximamente: Google Play Billing.
   const comprar = async (tipo) => {
-    // [PLAY] En la app de Google Play no se permite checkout dentro de la app.
-    if (ES_APP_PLAY) return;
-    try {
-      setError('');
-      const response = await fetch('https://xjzoabsuzbqxkriamqed.supabase.co/functions/v1/create-checkout', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhqem9hYnN1emJxeGtyaWFtcWVkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyNzYyNDcsImV4cCI6MjA5MDg1MjI0N30.gS2lG4W-f_4Vtsz7cYZK9PAX6pI8fdD0br7geqaae6E',
-        },
-        body: JSON.stringify({ tipo, device_id: deviceId }),
-      });
-      
-      const data = await response.json();
-      
-      if (data.ok && data.url) {
-        // Redirigir a Stripe Checkout
-        window.location.href = data.url;
-      } else {
-        setError(data.error || 'Error al procesar. Intenta de nuevo.');
-      }
-    } catch (e) { setError('Error de conexión. Intenta de nuevo.'); }
+    return; // sin pagos por ahora -- solo notas gratis + recarga 24h
   };
 
   // ============================================================
@@ -2006,59 +1947,18 @@ if (pagoStatus === 'exito' && pagoSessionId) {
           <div style={S.modal} onClick={(e) => e.stopPropagation()}>
             <h2 style={S.modalTitle}>Se acabaron tus notas 🔥</h2>
 
-            {ES_APP_PLAY ? (
-              /* [PLAY] En la app de Google Play NO se vende dentro de la app. Solo video. */
-              <>
-                <p style={S.modalSub}>Mira un video corto y consigue una nota más:</p>
-                <button onClick={verVideo} style={{...S.modalOpt, justifyContent: 'center'}}>
-                  <span style={S.modalOptIcon}>🎬</span>
-                  <div>
-                    <strong>Ver video (+1 nota)</strong>
-                    <p style={S.modalOptDesc}>Gratis · hasta {MAX_VIDEOS_DIA} al día</p>
-                  </div>
-                </button>
-                <p style={{ fontSize: '11px', color: COLORS.gray, textAlign: 'center', marginTop: '8px' }}>
-                  Tus notas gratis se recargan cada 24h.
-                </p>
-              </>
-            ) : (
-              /* WEB (firenotesapp.com): video gratis + packs de pago */
-              <>
-                <p style={S.modalSub}>Consigue más para seguir soltando:</p>
+            <div style={{ textAlign: 'center', padding: '20px 0' }}>
+              <span style={{ fontSize: '48px' }}>⏳</span>
+              <p style={{ fontSize: '15px', color: COLORS.grayLight, marginTop: '16px', lineHeight: '1.6' }}>
+                Ya soltaste tus <strong style={{ color: COLORS.orange }}>{MAX_NOTAS_GRATIS} notas de hoy</strong>.
+              </p>
+              <p style={{ fontSize: '14px', color: COLORS.gray, marginTop: '8px', lineHeight: '1.6' }}>
+                Se recargan solas cada 24 horas. ¡Vuelve mañana por más fuego! 🔥
+              </p>
+            </div>
 
-                <button onClick={verVideo} style={S.modalOpt}>
-                  <span style={S.modalOptIcon}>🎬</span>
-                  <div>
-                    <strong>Ver video (+1 nota)</strong>
-                    <p style={S.modalOptDesc}>Gratis · hasta {MAX_VIDEOS_DIA} al día</p>
-                  </div>
-                </button>
-
-                <button onClick={() => comprar('extra3')} style={S.modalOpt}>
-                  <span style={S.modalOptIcon}>🔥</span>
-                  <div>
-                    <strong>+3 pensamientos</strong>
-                    <p style={S.modalOptDesc}>$10 MXN <span style={{ color: COLORS.gray, fontSize: '11px' }}>≈ $0.60 USD</span></p>
-                  </div>
-                </button>
-
-                <button onClick={() => comprar('extra10')} style={{...S.modalOpt, border: `2px solid ${COLORS.gold}`}}>
-                  <span style={S.modalOptIcon}>⭐</span>
-                  <div>
-                    <strong>+10 pensamientos</strong>
-                    <p style={{...S.modalOptDesc, color: COLORS.gold}}>$25 MXN <span style={{ fontSize: '11px', opacity: 0.8 }}>≈ $1.50 USD</span> · Mejor valor</p>
-                  </div>
-                </button>
-
-                <div style={{ textAlign: 'center', padding: '12px', marginBottom: '8px' }}>
-                  <p style={{ fontSize: '12px', color: COLORS.gray, marginBottom: '6px' }}>Aceptamos</p>
-                  <p style={{ fontSize: '13px', color: COLORS.grayLight, fontWeight: '500' }}>💳 Tarjetas  ·  🏪 OXXO</p>
-                </div>
-              </>
-            )}
-
-            <button onClick={() => setMostrarModal(false)} style={S.btnTerciario}>
-              Cerrar
+            <button onClick={() => setMostrarModal(false)} style={S.btnPrimario}>
+              Entendido
             </button>
           </div>
         </div>
